@@ -57,14 +57,22 @@ jobs:
       - name: Test
         run: flutter test
 
-      - name: Build release APK
+      - name: Build release APKs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: >
-          flutter build apk --release
-          --dart-define=SUPABASE_URL=${SUPABASE_URL:-https://placeholder.supabase.co}
-          --dart-define=SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-placeholder-anon-key}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          # Split per ABI: the arm64 APK is roughly half the universal size,
+          # and it is what the in-app updater downloads (published under the
+          # historical name app-release.apk so older installs keep working).
+          flutter build apk --release --split-per-abi \
+            --dart-define=SUPABASE_URL=${SUPABASE_URL:-https://placeholder.supabase.co} \
+            --dart-define=SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-placeholder-anon-key}
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+             build/app/outputs/flutter-apk/app-release.apk
 
       - name: Publish GitHub Release
         if: github.ref == 'refs/heads/main'
@@ -72,16 +80,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=v$(sed -n 's/^version: \([^+ ]*\).*/\1/p' pubspec.yaml)
-          APK=build/app/outputs/flutter-apk/app-release.apk
-          # Existing release for this version: refresh its APK in place so
+          DIR=build/app/outputs/flutter-apk
+          # Existing release for this version: refresh its APKs in place so
           # the Releases page always carries the newest main build. A new
           # pubspec version creates a fresh release instead.
           if gh release view "$TAG" --json id >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" --clobber
+            gh release upload "$TAG" "$DIR/app-release.apk" \
+              "$DIR/app-armeabi-v7a-release.apk" --clobber
           else
-            gh release create "$TAG" "$APK" \
+            gh release create "$TAG" "$DIR/app-release.apk" \
+              "$DIR/app-armeabi-v7a-release.apk" \
               --title "RtText $TAG" \
-              --notes "Automated CI build of $GITHUB_SHA" \
+              --notes "Automated CI build of $GITHUB_SHA. app-release.apk is arm64 (modern phones); app-armeabi-v7a-release.apk for old 32-bit devices." \
               --latest
           fi
 
@@ -89,4 +99,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rttext-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/rttext-arm64.apk

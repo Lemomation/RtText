@@ -23,3 +23,6 @@ android/key.properties
 
 # ZCode local
 .zcode/
+
+# Release signing material
+android/app/keystore.p12
