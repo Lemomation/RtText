@@ -322,15 +322,14 @@ class _AvatarPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final ImageProvider? foregroundImage = pickedPath != null
+        ? FileImage(File(pickedPath!))
+        : (url != null && url!.isNotEmpty ? NetworkImage(url!) : null);
     return CircleAvatar(
       radius: 48,
       backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.15),
-      foregroundImage: pickedPath != null
-          ? FileImage(File(pickedPath!))
-          : (url != null && url!.isNotEmpty
-              ? NetworkImage(url!)
-              : null),
-      onForegroundImageError: (_, __) {},
+      foregroundImage: foregroundImage,
+      onForegroundImageError: foregroundImage == null ? null : (_, __) {},
       child: Text(
         name.isEmpty ? '+' : name.characters.first.toUpperCase(),
         style: TextStyle(
