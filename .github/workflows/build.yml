@@ -39,9 +39,9 @@ jobs:
         # it so `flutter build apk` can invoke Gradle.
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.12'
+          gradle-version: '8.14'
 
-      - run: gradle wrapper --gradle-version 8.12
+      - run: gradle wrapper --gradle-version 8.14
         working-directory: android
 
       - name: Install dependencies

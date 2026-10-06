@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:rttext/auth/auth_controller.dart';
 import 'package:rttext/screens/bot_profile_screen.dart';
 import 'package:rttext/screens/chat_screen.dart';
+import 'package:rttext/screens/chats_screen.dart';
 import 'package:rttext/screens/chats_shell_screen.dart';
 import 'package:rttext/screens/create_bot_screen.dart';
 import 'package:rttext/screens/login_screen.dart';
@@ -29,7 +30,7 @@ abstract final class AppRouter {
             routes: [
               GoRoute(
                 path: '/chats',
-                builder: (context, state) => const ChatsPlaceholder(),
+                builder: (context, state) => const ChatsScreen(),
               ),
               GoRoute(
                 path: '/discover',
