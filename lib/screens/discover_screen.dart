@@ -10,6 +10,7 @@ import 'package:rttext/services/conversations_service.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/placeholder_view.dart';
 import 'package:rttext/widgets/pressable_scale.dart';
+import 'package:rttext/widgets/rt_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Discover tab: two panes behind a segmented switch. 'Characters' is the
@@ -143,7 +144,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         title: const Text('Discover'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add_rounded),
+            icon: const RtIcon(type: RtIconType.sparkle),
             tooltip: 'Create character',
             onPressed: () => context.push('/create-bot'),
           ),
@@ -469,7 +470,12 @@ class _EmptyDiscover extends StatelessWidget {
             child: FilledButton.icon(
               key: const Key('discover-create-cta'),
               onPressed: () => context.push('/create-bot'),
-              icon: const Icon(Icons.auto_awesome),
+              // Explicit onPrimary keeps the sparkle legible on every accent
+              // (the brand sheen would wash out on the violet preset).
+              icon: RtIcon(
+                type: RtIconType.sparkle,
+                color: theme.colorScheme.onPrimary,
+              ),
               label: const Text('Create a character'),
             ),
           ),

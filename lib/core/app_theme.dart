@@ -26,6 +26,7 @@ abstract final class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surface,
+        height: 68,
         indicatorColor: scheme.primary.withValues(alpha: 0.25),
       ),
       cardTheme: const CardThemeData(color: surface),

@@ -8,6 +8,7 @@ import 'package:rttext/services/conversations_service.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/placeholder_view.dart';
 import 'package:rttext/widgets/pressable_scale.dart';
+import 'package:rttext/widgets/rt_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Chats tab: realtime list of conversations with swipe-to-delete and undo.
@@ -83,7 +84,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         title: const Text('RtText'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.person_outline_rounded),
+            icon: const RtIcon(type: RtIconType.person),
             tooltip: 'Profile',
             onPressed: () => context.push('/profile'),
           ),
@@ -91,7 +92,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/create-bot'),
-        child: const Icon(Icons.add_rounded),
+        child: const RtIcon(type: RtIconType.plus),
       )
           .animate()
           .fade(delay: 300.ms, duration: Motion.slow)

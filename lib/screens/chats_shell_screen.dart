@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/services/beads_service.dart';
 import 'package:rttext/widgets/bead_icon.dart';
+import 'package:rttext/widgets/rt_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Shell with bottom navigation (Chats / Discover) hosting tab routes.
@@ -89,21 +90,32 @@ class _ChatsShellScreenState extends State<ChatsShellScreen> {
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final index = _indexFor(location);
+    // The custom icon set ships a single filled variant per glyph, so the
+    // selected tab is expressed through color strength instead of an
+    // outline/fill pair.
+    final scheme = Theme.of(context).colorScheme;
+    final unselected = scheme.onSurfaceVariant.withValues(alpha: 0.55);
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (i) =>
             i == 0 ? context.go('/chats') : context.go('/discover'),
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline_rounded),
-            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            icon: RtIcon(type: RtIconType.chatBubble, color: unselected),
+            selectedIcon: RtIcon(
+              type: RtIconType.chatBubble,
+              color: scheme.primary,
+            ),
             label: 'Chats',
           ),
           NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore_rounded),
+            icon: RtIcon(type: RtIconType.explore, color: unselected),
+            selectedIcon: RtIcon(
+              type: RtIconType.explore,
+              color: scheme.primary,
+            ),
             label: 'Discover',
           ),
         ],

@@ -374,8 +374,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
       appBar: AppBar(
         title: const Text('Profile'),
         actions: [
+          // Distinctly styled action: the glyph sits in a small tonal chip
+          // instead of floating bare in the app bar.
           IconButton(
-            icon: const Icon(Icons.logout_rounded),
+            icon: Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: theme.colorScheme.primary.withValues(alpha: 0.12),
+              ),
+              child: const Icon(Icons.logout_rounded, size: 20),
+            ),
             tooltip: 'Sign out',
             onPressed: _confirmSignOut,
           ),
@@ -510,8 +521,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ),
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.edit_rounded,
-                                        size: 18),
+                                    icon: Container(
+                                      width: 30,
+                                      height: 30,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: theme.colorScheme.primary
+                                            .withValues(alpha: 0.12),
+                                      ),
+                                      child: const Icon(
+                                        Icons.edit_rounded,
+                                        size: 16,
+                                      ),
+                                    ),
                                     tooltip: 'Edit username',
                                     onPressed: () {
                                       _nameController.text =
