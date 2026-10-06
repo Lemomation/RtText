@@ -87,12 +87,20 @@ class ConversationsService {
   }
 
   /// Realtime stream of messages in a conversation, oldest first.
+  ///
+  /// Sorted client-side: the realtime stream's own ordering has proven
+  /// unreliable for late-arriving rows, which rendered new messages above
+  /// older ones.
   Stream<List<Message>> watchMessages(String conversationId) => _client
       .from('messages')
       .stream(primaryKey: ['id'])
       .eq('conversation_id', conversationId)
-      .order('created_at')
-      .map((rows) => rows.map(Message.fromMap).toList());
+      .map((rows) {
+    final messages = rows.map(Message.fromMap).toList()
+      ..sort((a, b) => (a.createdAt ?? DateTime(0))
+          .compareTo(b.createdAt ?? DateTime(0)));
+    return messages;
+  });
 
   Future<Conversation> getOrCreate(String botId) async {
     final uid = _uid;
@@ -132,8 +140,16 @@ class ConversationsService {
   /// reported by the function. Throws [OutOfBeadsException] when the
   /// function answered 402 (balance reached zero).
   Future<AiReplyResult> requestAiReply(String conversationId) async {
+    // The Authorization header must be sent explicitly: the shared
+    // FunctionsClient captures its headers at construction time and can
+    // carry the anon key instead of the caller's session token, which the
+    // function then (correctly) rejects.
+    final token = _client.auth.currentSession?.accessToken;
     final res = await _client.functions.invoke(
       'ai-reply',
+      headers: {
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
       body: {'conversation_id': conversationId},
     );
     if (res.status == 402) {
