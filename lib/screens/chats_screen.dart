@@ -75,12 +75,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
           IconButton(
             icon: const Icon(Icons.person_outline_rounded),
             tooltip: 'Profile',
-            onPressed: () => context.go('/profile'),
+            onPressed: () => context.push('/profile'),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.go('/create-bot'),
+        onPressed: () => context.push('/create-bot'),
         child: const Icon(Icons.add_rounded),
       )
           .animate()
@@ -153,7 +153,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     conversation: c,
                     timeLabel: _timeLabel(c.lastMessageAt ?? c.createdAt),
                     index: index,
-                    onTap: () => context.go('/chat/${c.id}'),
+                    onTap: () => context.push('/chat/${c.id}'),
                   ),
                 );
               },

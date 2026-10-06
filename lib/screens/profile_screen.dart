@@ -86,7 +86,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final client = Supabase.instance.client;
-      final path = 'pfp/user/$uid.jpg';
+      final path = 'user/$uid.jpg';
       final bytes = await file.readAsBytes();
       await client.storage.from('pfp').uploadBinary(
             path,
@@ -421,7 +421,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               itemBuilder: (context, index) {
                                 final bot = _myBots[index];
                                 return GestureDetector(
-                                  onTap: () => context.go('/bot/${bot.id}'),
+                                  onTap: () => context.push('/bot/${bot.id}'),
                                   child: SizedBox(
                                     width: 76,
                                     child: Column(

@@ -58,7 +58,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           IconButton(
             icon: const Icon(Icons.add_rounded),
             tooltip: 'Create character',
-            onPressed: () => context.go('/create-bot'),
+            onPressed: () => context.push('/create-bot'),
           ),
         ],
       ),
@@ -125,7 +125,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     itemBuilder: (context, index) => _BotCard(
                       bot: bots[index],
                       index: index,
-                      onTap: () => context.go('/bot/${bots[index].id}'),
+                      onTap: () => context.push('/bot/${bots[index].id}'),
                     ),
                   ),
                 );
@@ -224,7 +224,7 @@ class _EmptyDiscover extends StatelessWidget {
           const SizedBox(height: 20),
           FilledButton.icon(
             key: const Key('discover-create-cta'),
-            onPressed: () => context.go('/create-bot'),
+            onPressed: () => context.push('/create-bot'),
             icon: const Icon(Icons.auto_awesome),
             label: const Text('Create a character'),
           ),

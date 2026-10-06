@@ -60,6 +60,7 @@ class BotsService {
     bool isPublic = true,
   }) async {
     final row = await _client.from('bots').insert({
+      'owner': _uid,
       'name': name,
       'sys_prompt': sysPrompt,
       'bio': bio,
@@ -69,6 +70,11 @@ class BotsService {
     }).select(_publicColumns).single();
     return Bot.fromMap(row);
   }
+
+  /// Owner-only patch of just `pfp_url` on an existing row — used after the
+  /// bot is saved to attach the avatar uploaded post-save.
+  Future<void> updatePfpUrl(String id, String url) =>
+      _client.from('bots').update({'pfp_url': url}).eq('id', id);
 
   /// Owner-only update of a bot row. `pfpUrl` may be null to leave the
   /// current avatar untouched; pass it explicitly to change or clear it.

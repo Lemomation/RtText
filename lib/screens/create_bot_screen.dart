@@ -121,12 +121,15 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
     });
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final pfpUrl =
-          _pickedPfp != null ? await _uploadPfp(_pickedPfp!) : _existingPfpUrl;
       final service = BotsService(Supabase.instance.client);
+      // Save the row first (keeping the existing avatar in edit mode) so a
+      // picture problem can't abort the save; upload the pfp afterwards.
+      String? pfpUrl = _isEdit ? _existingPfpUrl : null;
+      String botId;
       if (_isEdit) {
+        botId = widget.botId!;
         await service.update(
-          id: widget.botId!,
+          id: botId,
           name: _nameController.text.trim(),
           sysPrompt: _sysPromptController.text.trim(),
           bio: _bioController.text.trim().isEmpty
@@ -138,7 +141,7 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
           pfpUrl: pfpUrl,
         );
       } else {
-        await service.create(
+        final bot = await service.create(
           name: _nameController.text.trim(),
           sysPrompt: _sysPromptController.text.trim(),
           bio: _bioController.text.trim().isEmpty
@@ -149,6 +152,18 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
               : _descriptionController.text.trim(),
           pfpUrl: pfpUrl,
         );
+        botId = bot.id;
+      }
+      if (_pickedPfp != null) {
+        try {
+          pfpUrl = await _uploadPfp(_pickedPfp!);
+          await service.updatePfpUrl(botId, pfpUrl!);
+        } catch (_) {
+          messenger.showSnackBar(const SnackBar(
+            content: Text(
+                'Picture upload failed — character saved without picture'),
+          ));
+        }
       }
       // Loading -> success morph before popping so the user sees the check.
       if (mounted) setState(() => _succeeded = true);

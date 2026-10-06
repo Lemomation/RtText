@@ -71,7 +71,7 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
       final conversation = await ConversationsService(Supabase.instance.client)
           .getOrCreate(bot.id);
       if (!mounted) return;
-      context.go('/chat/${conversation.id}');
+      context.push('/chat/${conversation.id}');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -260,7 +260,8 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                                 Expanded(
                                   child: OutlinedButton.icon(
                                     onPressed: () =>
-                                        context.go('/create-bot?id=${_bot!.id}'),
+                                        context.push(
+                                            '/create-bot?id=${_bot!.id}'),
                                     icon: const Icon(Icons.edit_rounded),
                                     label: const Text('Edit'),
                                   ),

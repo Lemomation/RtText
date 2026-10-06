@@ -192,7 +192,7 @@ class _ChatScreenState extends State<ChatScreen> {
             icon: const Icon(Icons.smart_toy_outlined),
             tooltip: 'Character profile',
             onPressed:
-                _bot == null ? null : () => context.go('/bot/${_bot!.id}'),
+                _bot == null ? null : () => context.push('/bot/${_bot!.id}'),
           ),
         ],
       ),
