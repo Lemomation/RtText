@@ -659,7 +659,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               duration: Motion.standard,
                               switchInCurve: Motion.emphasizedCurve,
                               switchOutCurve: Motion.emphasizedCurve.flipped,
-                              alignment: Alignment.centerLeft,
                               transitionBuilder: (child, animation) =>
                                   FadeTransition(
                                 opacity: animation,
