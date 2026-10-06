@@ -8,9 +8,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:rttext/auth/auth_controller.dart';
+import 'package:rttext/core/accents.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/profile.dart';
+import 'package:rttext/providers/theme_provider.dart';
 import 'package:rttext/services/bots_service.dart';
 import 'package:rttext/services/updater_service.dart';
 import 'package:rttext/widgets/bead_icon.dart';
@@ -367,6 +369,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final accentId = context.watch<ThemeProvider>().accentId;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
@@ -561,6 +564,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ).animate().fade(delay: 150.ms, duration: Motion.slow),
+                    const SizedBox(height: 16),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: theme
+                                      .colorScheme.primary
+                                      .withValues(alpha: 0.15),
+                                  child: Icon(
+                                    Icons.palette_rounded,
+                                    size: 20,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Appearance',
+                                    style: theme.textTheme.titleMedium,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                for (final accent in accents)
+                                  _AccentSwatch(
+                                    accent: accent,
+                                    selected: accent.id == accentId,
+                                    onTap: () => context
+                                        .read<ThemeProvider>()
+                                        .setAccent(accent.id),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ).animate().fade(delay: 180.ms, duration: Motion.slow),
                     const SizedBox(height: 28),
                     Text('My bots', style: theme.textTheme.titleMedium),
                     const SizedBox(height: 12),
@@ -681,10 +732,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 32),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _confirmSignOut,
-                        icon: const Icon(Icons.logout_rounded),
-                        label: const Text('Sign out'),
+                      child: PressableScale(
+                        onTap: _confirmSignOut,
+                        child: OutlinedButton.icon(
+                          onPressed: _confirmSignOut,
+                          icon: const Icon(Icons.logout_rounded),
+                          label: const Text('Sign out'),
+                        ),
                       ),
                     ),
                   ],
@@ -718,6 +772,59 @@ class _ProfileAvatar extends StatelessWidget {
           color: theme.colorScheme.primary,
           fontWeight: FontWeight.bold,
           fontSize: 30,
+        ),
+      ),
+    );
+  }
+}
+
+/// One tappable 44px accent circle. The selected preset shows a check that
+/// pops in with a spring, matching the motion vocabulary used elsewhere.
+class _AccentSwatch extends StatelessWidget {
+  const _AccentSwatch({
+    required this.accent,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Accent accent;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: accent.label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: accent.color,
+              shape: BoxShape.circle,
+            ),
+            child: selected
+                ? Center(
+                    child: Icon(
+                      Icons.check_rounded,
+                      size: 22,
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    )
+                        .animate()
+                        .scale(
+                          begin: const Offset(0.4, 0.4),
+                          end: const Offset(1, 1),
+                          duration: Motion.emphasized,
+                          curve: Motion.springCurve,
+                        ),
+                  )
+                : null,
+          ),
         ),
       ),
     );

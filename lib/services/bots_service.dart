@@ -9,7 +9,8 @@ class BotsService {
 
   final SupabaseClient _client;
 
-  static const _publicColumns = 'id,owner,name,bio,description,pfp_url,is_public,created_at';
+  static const _publicColumns =
+      'id,owner,name,bio,description,pfp_url,bubble_color,is_public,created_at';
 
   /// Public bots (plus the caller's own bots) for the Discover tab.
   Future<List<Bot>> listPublic({int limit = 50}) async {
@@ -51,12 +52,15 @@ class BotsService {
     return row == null ? null : Bot.fromMap(row);
   }
 
+  /// [bubbleColor] is a `#RRGGBB` tint for the bot's chat bubbles; null leaves
+  /// them on the theme default.
   Future<Bot> create({
     required String name,
     required String sysPrompt,
     String? bio,
     String? description,
     String? pfpUrl,
+    String? bubbleColor,
     bool isPublic = true,
   }) async {
     final row = await _client.from('bots').insert({
@@ -66,6 +70,7 @@ class BotsService {
       'bio': bio,
       'description': description,
       'pfp_url': pfpUrl,
+      'bubble_color': bubbleColor,
       'is_public': isPublic,
     }).select(_publicColumns).single();
     return Bot.fromMap(row);
@@ -78,6 +83,8 @@ class BotsService {
 
   /// Owner-only update of a bot row. `pfpUrl` may be null to leave the
   /// current avatar untouched; pass it explicitly to change or clear it.
+  /// `bubbleColor` is the `#RRGGBB` bubble tint — pass null to go back to the
+  /// theme default.
   Future<Bot> update({
     required String id,
     required String name,
@@ -85,6 +92,7 @@ class BotsService {
     String? bio,
     String? description,
     String? pfpUrl,
+    String? bubbleColor,
     bool isPublic = true,
   }) async {
     final row = await _client.from('bots').update({
@@ -93,6 +101,7 @@ class BotsService {
       'bio': bio,
       'description': description,
       'pfp_url': pfpUrl,
+      'bubble_color': bubbleColor,
       'is_public': isPublic,
     }).eq('id', id).select(_publicColumns).single();
     return Bot.fromMap(row);

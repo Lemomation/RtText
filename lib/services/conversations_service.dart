@@ -160,7 +160,7 @@ class ConversationsService {
   Future<Bot?> botFor(String botId) async {
     final row = await _client
         .from('public_bots')
-        .select('id,owner,name,bio,description,pfp_url,is_public,created_at')
+        .select('id,owner,name,bio,description,pfp_url,bubble_color,is_public,created_at')
         .eq('id', botId)
         .maybeSingle();
     return row == null ? null : Bot.fromMap(row);

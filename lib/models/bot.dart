@@ -10,6 +10,7 @@ class Bot {
     this.pfpUrl,
     this.isPublic = true,
     this.sysPrompt,
+    this.bubbleColor,
     this.createdAt,
   });
 
@@ -21,6 +22,9 @@ class Bot {
   final String? pfpUrl;
   final bool isPublic;
   final String? sysPrompt;
+
+  /// Hex tint (`#RRGGBB`) for this bot's chat bubbles; null = theme default.
+  final String? bubbleColor;
   final DateTime? createdAt;
 
   factory Bot.fromMap(Map<String, dynamic> map) => Bot(
@@ -32,6 +36,7 @@ class Bot {
         pfpUrl: map['pfp_url'] as String?,
         isPublic: (map['is_public'] as bool?) ?? true,
         sysPrompt: map['sys_prompt'] as String?,
+        bubbleColor: map['bubble_color'] as String?,
         createdAt: map['created_at'] == null
             ? null
             : DateTime.parse(map['created_at'] as String),
@@ -46,6 +51,7 @@ class Bot {
         'pfp_url': pfpUrl,
         'is_public': isPublic,
         if (sysPrompt != null) 'sys_prompt': sysPrompt,
+        if (bubbleColor != null) 'bubble_color': bubbleColor,
         if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       };
 }

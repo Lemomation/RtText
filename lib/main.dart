@@ -4,6 +4,7 @@ import 'package:rttext/app.dart';
 import 'package:rttext/auth/auth_controller.dart';
 import 'package:rttext/core/app_router.dart';
 import 'package:rttext/core/supabase_config.dart';
+import 'package:rttext/providers/theme_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<void> main() async {
@@ -17,11 +18,13 @@ Future<void> main() async {
   await Supabase.initialize(url: SupabaseConfig.url, publishableKey: SupabaseConfig.anonKey);
 
   final auth = AuthController(Supabase.instance.client)..start();
+  final theme = ThemeProvider();
+  await theme.load();
 
   runApp(
     ChangeNotifierProvider.value(
       value: auth,
-      child: RtTextApp(router: AppRouter.build(auth)),
+      child: RtTextApp(router: AppRouter.build(auth), themeProvider: theme),
     ),
   );
 }

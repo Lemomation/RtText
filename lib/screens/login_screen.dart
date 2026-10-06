@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import 'package:rttext/auth/auth_controller.dart';
 import 'package:rttext/core/animations.dart';
+import 'package:rttext/widgets/pressable_scale.dart';
 
 /// Splash/login screen with an animated logo and Google OAuth button.
 class LoginScreen extends StatefulWidget {
@@ -86,16 +87,19 @@ class _GoogleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.icon(
-      onPressed: onPressed,
-      icon: onPressed == null
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.login_rounded),
-      label: const Text('Continue with Google'),
+    return PressableScale(
+      onTap: onPressed,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: onPressed == null
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.login_rounded),
+        label: const Text('Continue with Google'),
+      ),
     )
         .animate()
         .fade(delay: 500.ms, duration: Motion.slow)

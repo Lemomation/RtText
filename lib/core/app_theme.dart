@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Dark-first Material 3 theme: deep charcoal surfaces with a teal accent.
+/// Dark-first Material 3 theme: deep charcoal surfaces with a configurable
+/// accent (teal by default).
 abstract final class AppTheme {
   static const seed = Color(0xFF2DD4BF);
 
@@ -8,7 +9,7 @@ abstract final class AppTheme {
   static const surface = Color(0xFF11161D);
   static const surfaceHigh = Color(0xFF1A212B);
 
-  static ThemeData dark() {
+  static ThemeData dark({Color seed = AppTheme.seed}) {
     final scheme = ColorScheme.fromSeed(
       seedColor: seed,
       brightness: Brightness.dark,

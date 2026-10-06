@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:rttext/core/accents.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/core/uuid.dart';
 import 'package:rttext/services/bots_service.dart';
@@ -33,6 +34,10 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
 
   XFile? _pickedPfp;
   String? _existingPfpUrl;
+
+  /// `#RRGGBB` tint for this bot's chat bubbles; null = theme default.
+  String? _bubbleColor;
+
   bool _loadingEdit = false;
   bool _editFailed = false;
   bool _submitting = false;
@@ -77,6 +82,7 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
       _descriptionController.text = bot.description ?? '';
       _sysPromptController.text = bot.sysPrompt ?? '';
       _existingPfpUrl = bot.pfpUrl;
+      _bubbleColor = bot.bubbleColor;
       setState(() => _loadingEdit = false);
     } catch (_) {
       if (!mounted) return;
@@ -139,6 +145,7 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
               ? null
               : _descriptionController.text.trim(),
           pfpUrl: pfpUrl,
+          bubbleColor: _bubbleColor,
         );
       } else {
         final bot = await service.create(
@@ -151,6 +158,7 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
               ? null
               : _descriptionController.text.trim(),
           pfpUrl: pfpUrl,
+          bubbleColor: _bubbleColor,
         );
         botId = bot.id;
       }
@@ -364,6 +372,45 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                             duration: Motion.emphasized,
                             curve: Motion.decelerateCurve,
                           ),
+                      const SizedBox(height: 24),
+                      Text('Bubble color', style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tints this character\u2019s replies in chat',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          _BubbleColorSwatch(
+                            label: 'Default',
+                            selected: _bubbleColor == null,
+                            onTap: () => setState(() => _bubbleColor = null),
+                          ),
+                          for (final accent in accents)
+                            _BubbleColorSwatch(
+                              label: accent.label,
+                              color: accent.color,
+                              selected: _bubbleColor?.toUpperCase() ==
+                                  _hexOf(accent.color),
+                              onTap: () => setState(
+                                () => _bubbleColor = _hexOf(accent.color),
+                              ),
+                            ),
+                        ],
+                      )
+                          .animate(delay: Motion.stagger(5))
+                          .fade(duration: Motion.emphasized)
+                          .slideY(
+                            begin: 0.08,
+                            end: 0,
+                            duration: Motion.emphasized,
+                            curve: Motion.decelerateCurve,
+                          ),
                       const SizedBox(height: 28),
                       SizedBox(
                         width: double.infinity,
@@ -392,7 +439,7 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                           ),
                         ),
                       )
-                          .animate(delay: Motion.stagger(5))
+                          .animate(delay: Motion.stagger(6))
                           .fade(duration: Motion.emphasized)
                           .slideY(
                             begin: 0.08,
@@ -403,6 +450,93 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                     ],
                   ),
                 ),
+    );
+  }
+}
+
+/// '#RRGGBB' for [color] — the format stored in `bots.bubble_color`.
+String _hexOf(Color color) {
+  final rgb = color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2);
+  return '#${rgb.toUpperCase()}';
+}
+
+/// One tappable bubble-color circle: a preset tint, or the neutral "Default"
+/// option ([color] null) that leaves bubbles on the theme surface. The
+/// selected indicator pops in with the shared spring curve.
+class _BubbleColorSwatch extends StatelessWidget {
+  const _BubbleColorSwatch({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.color,
+  });
+
+  final String label;
+  final Color? color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tint = color;
+    final Widget? indicator;
+    if (tint == null) {
+      indicator = Icon(
+        Icons.palette_outlined,
+        size: 22,
+        color: selected
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
+      )
+          .animate(key: ValueKey(selected))
+          .scale(
+            begin: const Offset(0.8, 0.8),
+            end: const Offset(1, 1),
+            duration: Motion.emphasized,
+            curve: Motion.springCurve,
+          );
+    } else if (selected) {
+      indicator = const Icon(
+        Icons.check_rounded,
+        size: 22,
+        color: Colors.black87,
+      )
+          .animate(key: ValueKey(selected))
+          .scale(
+            begin: const Offset(0.4, 0.4),
+            end: const Offset(1, 1),
+            duration: Motion.emphasized,
+            curve: Motion.springCurve,
+          );
+    } else {
+      indicator = null;
+    }
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: tint ?? theme.colorScheme.surfaceContainerHighest,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: selected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outlineVariant,
+                width: 2,
+              ),
+            ),
+            child: Center(child: indicator),
+          ),
+        ),
+      ),
     );
   }
 }

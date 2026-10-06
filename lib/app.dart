@@ -1,24 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:rttext/core/app_theme.dart';
 import 'package:rttext/core/supabase_config.dart';
+import 'package:rttext/providers/theme_provider.dart';
 
 /// Root widget. [RtTextApp.misconfigured] renders a friendly error screen
 /// instead of crashing when --dart-define values are missing.
 class RtTextApp extends StatelessWidget {
-  const RtTextApp({super.key, required this.router})
-      : misconfigured = false;
+  const RtTextApp({
+    super.key,
+    required this.router,
+    required this.themeProvider,
+  }) : misconfigured = false;
 
   const RtTextApp.misconfigured({super.key})
       : router = null,
+        themeProvider = null,
         misconfigured = true;
 
   final GoRouter? router;
+  final ThemeProvider? themeProvider;
   final bool misconfigured;
 
   @override
   Widget build(BuildContext context) {
-    if (misconfigured) {
+    final provider = themeProvider;
+    if (misconfigured || provider == null) {
       return MaterialApp(
         title: 'RtText',
         debugShowCheckedModeBanner: false,
@@ -26,11 +34,17 @@ class RtTextApp extends StatelessWidget {
         home: const _MissingConfigScreen(),
       );
     }
-    return MaterialApp.router(
-      title: 'RtText',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark(),
-      routerConfig: router,
+    return ChangeNotifierProvider<ThemeProvider>.value(
+      value: provider,
+      child: AnimatedBuilder(
+        animation: provider,
+        builder: (context, _) => MaterialApp.router(
+          title: 'RtText',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.dark(seed: provider.seed),
+          routerConfig: router,
+        ),
+      ),
     );
   }
 }

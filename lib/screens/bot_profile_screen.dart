@@ -258,31 +258,40 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                           ? Row(
                               children: [
                                 Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () =>
-                                        context.push(
-                                            '/create-bot?id=${_bot!.id}'),
-                                    icon: const Icon(Icons.edit_rounded),
-                                    label: const Text('Edit'),
+                                  child: PressableScale(
+                                    onTap: () => context.push(
+                                        '/create-bot?id=${_bot!.id}'),
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => context.push(
+                                          '/create-bot?id=${_bot!.id}'),
+                                      icon: const Icon(Icons.edit_rounded),
+                                      label: const Text('Edit'),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: theme.colorScheme.error,
+                                  child: PressableScale(
+                                    onTap: _deleting ? null : _confirmDelete,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor:
+                                            theme.colorScheme.error,
+                                      ),
+                                      onPressed:
+                                          _deleting ? null : _confirmDelete,
+                                      icon: _deleting
+                                          ? const SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child:
+                                                  CircularProgressIndicator(
+                                                      strokeWidth: 2),
+                                            )
+                                          : const Icon(
+                                              Icons.delete_outline_rounded),
+                                      label: const Text('Delete'),
                                     ),
-                                    onPressed: _deleting ? null : _confirmDelete,
-                                    icon: _deleting
-                                        ? const SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2),
-                                          )
-                                        : const Icon(
-                                            Icons.delete_outline_rounded),
-                                    label: const Text('Delete'),
                                   ),
                                 ),
                               ],

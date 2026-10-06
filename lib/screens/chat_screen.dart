@@ -255,7 +255,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     return _EmptyThread(botName: _bot?.name);
                   }
                   _scrollToBottom();
-                  return _buildList(messages);
+                  return _buildList(messages, _bot?.bubbleColor);
                 }
                 return const Center(child: CircularProgressIndicator());
               },
@@ -281,7 +281,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildList(List<Message> messages) {
+  /// [botBubbleColor] is the bot's stored `#RRGGBB` bubble tint (null = theme
+  /// default), applied to assistant bubbles only.
+  Widget _buildList(List<Message> messages, String? botBubbleColor) {
     final items = <Widget>[];
     for (var i = 0; i < messages.length; i++) {
       final message = messages[i];
@@ -295,6 +297,7 @@ class _ChatScreenState extends State<ChatScreen> {
       items.add(
         _MessageBubble(
           message: message,
+          botBubbleColor: botBubbleColor,
           groupedWithPrev:
               !separator && prev != null && prev.isUser == message.isUser,
         ),
@@ -337,16 +340,46 @@ class _DateSeparator extends StatelessWidget {
   }
 }
 
+/// A stored `#RRGGBB` bot bubble tint, or null when unset/malformed (the
+/// bubble then falls back to the theme surface).
+Color? _parseBubbleColor(String? hex) {
+  if (hex == null) return null;
+  final value = int.tryParse(hex.replaceFirst('#', '').trim(), radix: 16);
+  return value == null ? null : Color(0xFF000000 | value);
+}
+
+/// Text color that stays legible on a custom bubble tint.
+Color _onBubbleColor(Color background) =>
+    ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, this.groupedWithPrev = false});
+  const _MessageBubble({
+    required this.message,
+    this.botBubbleColor,
+    this.groupedWithPrev = false,
+  });
 
   final Message message;
+
+  /// Owner-picked `#RRGGBB` tint for this bot's bubbles; null = theme default.
+  final String? botBubbleColor;
   final bool groupedWithPrev;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isUser = message.isUser;
+    // Only assistant bubbles take the bot's tint; user bubbles keep the
+    // accent color as-is.
+    final tint = isUser ? null : _parseBubbleColor(botBubbleColor);
+    final bubbleColor = isUser
+        ? theme.colorScheme.primary
+        : (tint ?? theme.colorScheme.surface);
+    final textColor = isUser
+        ? theme.colorScheme.onPrimary
+        : (tint == null ? theme.colorScheme.onSurface : _onBubbleColor(tint));
     final radius = BorderRadius.only(
       topLeft: const Radius.circular(20),
       topRight: const Radius.circular(20),
@@ -364,16 +397,10 @@ class _MessageBubble extends StatelessWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         constraints: const BoxConstraints(maxWidth: 320),
-        decoration: BoxDecoration(
-          color: isUser ? theme.colorScheme.primary : theme.colorScheme.surface,
-          borderRadius: radius,
-        ),
+        decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
         child: Text(
           message.content,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color:
-                isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
-          ),
+          style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
         ),
       ),
     );

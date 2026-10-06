@@ -222,11 +222,14 @@ class _EmptyDiscover extends StatelessWidget {
             style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: 20),
-          FilledButton.icon(
-            key: const Key('discover-create-cta'),
-            onPressed: () => context.push('/create-bot'),
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('Create a character'),
+          PressableScale(
+            onTap: () => context.push('/create-bot'),
+            child: FilledButton.icon(
+              key: const Key('discover-create-cta'),
+              onPressed: () => context.push('/create-bot'),
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('Create a character'),
+            ),
           ),
         ],
       )
