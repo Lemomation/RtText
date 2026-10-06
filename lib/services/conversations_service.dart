@@ -64,20 +64,52 @@ class ConversationsService {
       // Bot enrichment is best-effort; the list still renders.
     }
 
+    // Peer metadata for DM chats in one query via the people view
+    // (never beads). Bot enrichment above is untouched.
+    final dmIds = convs.where((c) => c.isDm).map((c) => c.dmUserId!).toList();
+    if (dmIds.isNotEmpty) {
+      try {
+        final peerRows = await _client
+            .from('people')
+            .select('id,username,avatar_url')
+            .inFilter('id', dmIds);
+        final byId = <String, Map<String, dynamic>>{};
+        for (final r in (peerRows as List)) {
+          final m = r as Map<String, dynamic>;
+          byId[m['id'] as String] = m;
+        }
+        convs = convs.map((c) {
+          if (!c.isDm) return c;
+          final p = byId[c.dmUserId!];
+          return c.copyWith(
+            peerName: p?['username'] as String?,
+            peerAvatarUrl: p?['avatar_url'] as String?,
+          );
+        }).toList();
+      } catch (_) {
+        // Peer enrichment is best-effort; the list still renders.
+      }
+    }
+
     // Last message preview per conversation (small N, one query each).
     final previews = <String, String>{};
     for (final c in convs) {
       try {
         final last = await _client
             .from('messages')
-            .select('content,role')
+            .select('content,role,sender_id')
             .eq('conversation_id', c.id)
             .order('created_at', ascending: false)
             .limit(1);
         if (last.isNotEmpty) {
           final m = last.first;
           final content = (m['content'] as String?) ?? '';
-          previews[c.id] = m['role'] == 'user' ? 'You: $content' : content;
+          // Bot chats: role distinguishes the sides. DM chats: both sides are
+          // 'user', so attribute via sender_id instead.
+          final mine = c.isDm
+              ? m['sender_id'] == uid
+              : m['role'] == 'user';
+          previews[c.id] = mine ? 'You: $content' : content;
         }
       } catch (_) {}
     }
@@ -120,12 +152,73 @@ class ConversationsService {
     return Conversation.fromMap(row);
   }
 
+  /// Finds the 1:1 DM with [peerId] or creates it. DMs are free: this never
+  /// touches beads or ai-reply.
+  Future<Conversation> getOrCreateDm(String peerId) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+
+    Future<Conversation?> find() async {
+      final row = await _client
+          .from('conversations')
+          .select()
+          .or('and(user_id.eq.$uid,dm_user_id.eq.$peerId),'
+              'and(user_id.eq.$peerId,dm_user_id.eq.$uid)')
+          .maybeSingle();
+      return row == null ? null : Conversation.fromMap(row);
+    }
+
+    final existing = await find();
+    if (existing != null) return existing;
+    try {
+      final row = await _client
+          .from('conversations')
+          .insert({'user_id': uid, 'dm_user_id': peerId})
+          .select()
+          .single();
+      return Conversation.fromMap(row);
+    } on PostgrestException catch (e) {
+      // Lost a race against the unique pair index — the other side (or a
+      // parallel call) created the conversation first; re-read it.
+      if (e.code == '23505') {
+        final raced = await find();
+        if (raced != null) return raced;
+      }
+      rethrow;
+    }
+  }
+
+  /// Username search for starting a DM: prefix match on the people view,
+  /// excluding the caller. Returns raw rows of {id, username, avatar_url}.
+  Future<List<Map<String, dynamic>>> searchPeople(String query) async {
+    final uid = _uid;
+    if (uid == null) return const [];
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    final rows = await _client
+        .from('people')
+        .select('id,username,avatar_url')
+        .ilike('username', '$q%')
+        .neq('id', uid)
+        .limit(20);
+    return (rows as List).cast<Map<String, dynamic>>();
+  }
+
   /// Inserts a user message and returns the persisted row.
-  Future<Message> sendMessage(String conversationId, String content) async {
+  ///
+  /// For DM chats pass [senderIdToWrite] (the caller's uid) so the peer's
+  /// client can attribute the bubble; bot chats omit it and stay exactly as
+  /// before.
+  Future<Message> sendMessage(
+    String conversationId,
+    String content, {
+    String? senderIdToWrite,
+  }) async {
     final row = await _client.from('messages').insert({
       'conversation_id': conversationId,
       'role': 'user',
       'content': content,
+      if (senderIdToWrite != null) 'sender_id': senderIdToWrite,
     }).select().single();
     await _client
         .from('conversations')

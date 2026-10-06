@@ -12,9 +12,10 @@ import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/typing_indicator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// One-to-one chat thread with an AI character: realtime messages, springy
-/// bubble entrances, typing indicator while the edge function generates the
-/// reply, and an optimistic-send input bar.
+/// One-to-one chat thread with an AI character or (DM mode) another human:
+/// realtime messages, springy bubble entrances, typing indicator while the
+/// edge function generates the reply, and an optimistic-send input bar.
+/// DM chats are free: they never invoke ai-reply and never touch beads.
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.chatId});
 
@@ -33,6 +34,14 @@ class _ChatScreenState extends State<ChatScreen> {
   Bot? _bot;
   bool _awaitingReply = false;
 
+  // DM mode: the conversation is human-to-human (dm_user_id set, bot_id
+  // null). Bubbles attribute via sender_id and sending persists the message
+  // only — no typing indicator, no bead balance, no ai-reply.
+  bool _isDm = false;
+  String? _myUid;
+  String? _peerName;
+  String? _peerAvatarUrl;
+
   /// Caller's bead balance; null = unknown (sending stays allowed and the
   /// 402 from the edge function is the fallback enforcement).
   int? _beads;
@@ -42,7 +51,6 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _service = ConversationsService(Supabase.instance.client);
     _loadConversation();
-    _loadBalance();
   }
 
   Future<void> _loadBalance() async {
@@ -58,9 +66,38 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final conv = await Supabase.instance.client
           .from('conversations')
-          .select('bot_id')
+          .select('bot_id,dm_user_id')
           .eq('id', widget.chatId)
           .maybeSingle();
+      final dmUserId = conv?['dm_user_id'] as String?;
+      if (dmUserId != null) {
+        // Human DM: free chat. Beads are never loaded here — the bead
+        // balance RPC must stay unreachable on DM code paths.
+        final myUid = Supabase.instance.client.auth.currentUser?.id;
+        if (!mounted) return;
+        setState(() {
+          _isDm = true;
+          _myUid = myUid;
+        });
+        try {
+          final peer = await Supabase.instance.client
+              .from('people')
+              .select('username,avatar_url')
+              .eq('id', dmUserId)
+              .maybeSingle();
+          if (mounted) {
+            setState(() {
+              _peerName = peer?['username'] as String?;
+              _peerAvatarUrl = peer?['avatar_url'] as String?;
+            });
+          }
+        } catch (_) {
+          // App bar simply keeps the generic title.
+        }
+        return;
+      }
+      // Bot chat: load the bead balance while the bot metadata fetches.
+      _loadBalance();
       final botId = conv?['bot_id'] as String?;
       if (botId != null && mounted) {
         final bot = await _service.botFor(botId);
@@ -119,14 +156,35 @@ class _ChatScreenState extends State<ChatScreen> {
       conversationId: widget.chatId,
       role: 'user',
       content: text,
+      // DM messages carry the sender so both sides can attribute bubbles;
+      // bot chats leave it null exactly as before.
+      senderId: _isDm ? _myUid : null,
       createdAt: DateTime.now(),
       pending: true,
     );
     setState(() {
       _pending.add(optimistic);
-      _awaitingReply = true;
+      // No typing indicator in DMs: only AI replies "type".
+      if (!_isDm) _awaitingReply = true;
     });
     _scrollToBottom();
+
+    if (_isDm) {
+      // Human DM: free — persist the message and nothing else. Never
+      // requestAiReply, never beads.
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        await _service.sendMessage(widget.chatId, text,
+            senderIdToWrite: _myUid);
+        // The persisted row arrives via the realtime stream and replaces the
+        // optimistic copy.
+      } catch (_) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Message not sent')),
+        );
+      }
+      return;
+    }
 
     try {
       await _service.sendMessage(widget.chatId, text);
@@ -192,47 +250,71 @@ class _ChatScreenState extends State<ChatScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            BotAvatar(name: _bot?.name ?? '?', url: _bot?.pfpUrl, radius: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _bot?.name ?? 'Chat',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  if (_awaitingReply)
+            if (_isDm) ...[
+              BotAvatar(
+                name: _peerName ?? '?',
+                url: _peerAvatarUrl,
+                radius: 18,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      'typing…',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                    )
-                  else if ((_bot?.bio ?? '').isNotEmpty)
-                    Text(
-                      _bot!.bio!,
+                      _peerName ?? 'Chat',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ] else ...[
+              BotAvatar(name: _bot?.name ?? '?', url: _bot?.pfpUrl, radius: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _bot?.name ?? 'Chat',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (_awaitingReply)
+                      Text(
+                        'typing…',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      )
+                    else if ((_bot?.bio ?? '').isNotEmpty)
+                      Text(
+                        _bot!.bio!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.smart_toy_outlined),
-            tooltip: 'Character profile',
-            onPressed:
-                _bot == null ? null : () => context.push('/bot/${_bot!.id}'),
-          ),
+          // DMs have no character profile to open.
+          if (!_isDm)
+            IconButton(
+              icon: const Icon(Icons.smart_toy_outlined),
+              tooltip: 'Character profile',
+              onPressed:
+                  _bot == null ? null : () => context.push('/bot/${_bot!.id}'),
+            ),
         ],
       ),
       body: Column(
@@ -247,12 +329,20 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
                 if (server != null) {
                   // Drop pending optimistic bubbles echoed by the server.
+                  // Matching sender_id too keeps a DM peer's identical text
+                  // from swallowing our optimistic bubble; in bot chats both
+                  // sides are null, so behavior is unchanged.
                   _pending.removeWhere(
-                    (p) => server.any((m) => m.isUser && m.content == p.content),
+                    (p) => server.any((m) =>
+                        m.isUser &&
+                        m.content == p.content &&
+                        m.senderId == p.senderId),
                   );
                   final messages = [...server, ..._pending];
                   if (messages.isEmpty) {
-                    return _EmptyThread(botName: _bot?.name);
+                    return _EmptyThread(
+                      botName: _isDm ? _peerName : _bot?.name,
+                    );
                   }
                   _scrollToBottom();
                   return _buildList(messages, _bot?.bubbleColor);
@@ -281,6 +371,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Which side of the screen a bubble sits on. Bot chats keep the
+  /// role-based rule; DM chats attribute via sender_id == my uid.
+  bool _isMine(Message m) =>
+      _isDm ? m.senderId != null && m.senderId == _myUid : m.isUser;
+
   /// [botBubbleColor] is the bot's stored `#RRGGBB` bubble tint (null = theme
   /// default), applied to assistant bubbles only.
   Widget _buildList(List<Message> messages, String? botBubbleColor) {
@@ -298,12 +393,14 @@ class _ChatScreenState extends State<ChatScreen> {
         _MessageBubble(
           message: message,
           botBubbleColor: botBubbleColor,
+          isDm: _isDm,
+          myUserId: _myUid,
           groupedWithPrev:
-              !separator && prev != null && prev.isUser == message.isUser,
+              !separator && prev != null && _isMine(prev) == _isMine(message),
         ),
       );
     }
-    if (_awaitingReply) items.add(const TypingIndicator());
+    if (!_isDm && _awaitingReply) items.add(const TypingIndicator());
     return ListView(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -358,6 +455,8 @@ class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.message,
     this.botBubbleColor,
+    this.isDm = false,
+    this.myUserId,
     this.groupedWithPrev = false,
   });
 
@@ -365,12 +464,19 @@ class _MessageBubble extends StatelessWidget {
 
   /// Owner-picked `#RRGGBB` tint for this bot's bubbles; null = theme default.
   final String? botBubbleColor;
+
+  /// Human DM mode: sides are decided by [myUserId], not by role (both
+  /// participants' messages are stored with role 'user').
+  final bool isDm;
+  final String? myUserId;
   final bool groupedWithPrev;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isUser = message.isUser;
+    final isUser = isDm
+        ? message.senderId != null && message.senderId == myUserId
+        : message.isUser;
     // Only assistant bubbles take the bot's tint; user bubbles keep the
     // accent color as-is.
     final tint = isUser ? null : _parseBubbleColor(botBubbleColor);

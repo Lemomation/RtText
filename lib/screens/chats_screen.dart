@@ -46,14 +46,24 @@ class _ChatsScreenState extends State<ChatsScreen> {
       await _service.delete(conversation.id);
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Deleted chat with ${conversation.botName ?? 'bot'}'),
+          content: Text(
+            'Deleted chat with ${conversation.isDm
+                ? (conversation.peerName ?? 'them')
+                : (conversation.botName ?? 'bot')}',
+          ),
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () async {
               try {
+                // Restore the row in its original orientation: a DM is
+                // identified by dm_user_id (either side may have deleted it),
+                // a bot chat by bot_id.
                 await Supabase.instance.client.from('conversations').insert({
                   'user_id': conversation.userId,
-                  'bot_id': conversation.botId,
+                  if (conversation.isDm)
+                    'dm_user_id': conversation.dmUserId
+                  else
+                    'bot_id': conversation.botId,
                 });
               } catch (_) {}
             },
@@ -187,12 +197,18 @@ class _ChatTile extends StatelessWidget {
         onTap: onTap,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: BotAvatar(
-          name: conversation.botName ?? '?',
-          url: conversation.botPfpUrl,
+          name: conversation.isDm
+              ? (conversation.peerName ?? '?')
+              : (conversation.botName ?? '?'),
+          url: conversation.isDm
+              ? conversation.peerAvatarUrl
+              : conversation.botPfpUrl,
           radius: 26,
         ),
         title: Text(
-          conversation.botName ?? 'Unknown bot',
+          conversation.isDm
+              ? (conversation.peerName ?? 'Unknown user')
+              : (conversation.botName ?? 'Unknown bot'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.titleSmall,
