@@ -165,7 +165,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 ButtonSegment(
                   value: _DiscoverTab.people,
                   label: Text('People'),
-                  icon: const Icon(Icons.people_outline_rounded),
+                  icon: Icon(Icons.people_outline_rounded),
                 ),
               ],
               selected: {_tab},
