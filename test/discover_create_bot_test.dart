@@ -61,15 +61,15 @@ void main() {
     expect(find.text('System prompt'), findsOneWidget);
 
     // The form is taller than the test viewport (and ListView builds
-    // children lazily), so drag until the submit button is materialized —
-    // ensureVisible cannot see unbuilt children. The scrollable must be
-    // pinned to the ListView: the multi-line TextFields embed their own
-    // Scrollables, so the default finder matches several.
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('bot-submit')),
-      200,
-      scrollable: find.byType(ListView),
-    );
+    // children lazily), so drag the form up until the submit button is
+    // materialized — ensureVisible cannot see unbuilt children, and
+    // scrollUntilVisible is awkward here because the multi-line TextFields
+    // embed their own Scrollables.
+    for (var i = 0; i < 10; i++) {
+      if (find.byKey(const Key('bot-submit')).evaluate().isNotEmpty) break;
+      await tester.drag(find.byType(ListView), const Offset(0, -300));
+      await tester.pumpAndSettle();
+    }
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('bot-submit')));
     await tester.pump(const Duration(milliseconds: 400));

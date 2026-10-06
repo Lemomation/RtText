@@ -72,11 +72,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=v$(sed -n 's/^version: \([^+ ]*\).*/\1/p' pubspec.yaml)
-          # || true guards tag-exists failures on workflow re-runs
-          gh release create "$TAG" build/app/outputs/flutter-apk/app-release.apk \
-            --title "RtText $TAG" \
-            --notes "Automated CI build of $GITHUB_SHA" \
-            --latest || true
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          # Existing release for this version: refresh its APK in place so
+          # the Releases page always carries the newest main build. A new
+          # pubspec version creates a fresh release instead.
+          if gh release view "$TAG" --json id >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --title "RtText $TAG" \
+              --notes "Automated CI build of $GITHUB_SHA" \
+              --latest
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
