@@ -255,32 +255,18 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                       ],
                       const SizedBox(height: 32),
                       (_isOwner
-                          ? Row(
+                          ? Column(
                               children: [
-                                Expanded(
+                                // Creators can chat with their own bot too —
+                                // bead-wise it's net-zero (spend 1, earn 1).
+                                SizedBox(
+                                  width: double.infinity,
                                   child: PressableScale(
-                                    onTap: () => context.push(
-                                        '/create-bot?id=${_bot!.id}'),
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => context.push(
-                                          '/create-bot?id=${_bot!.id}'),
-                                      icon: const Icon(Icons.edit_rounded),
-                                      label: const Text('Edit'),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: PressableScale(
-                                    onTap: _deleting ? null : _confirmDelete,
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor:
-                                            theme.colorScheme.error,
-                                      ),
+                                    onTap: _starting ? null : _startChat,
+                                    child: FilledButton.icon(
                                       onPressed:
-                                          _deleting ? null : _confirmDelete,
-                                      icon: _deleting
+                                          _starting ? null : _startChat,
+                                      icon: _starting
                                           ? const SizedBox(
                                               width: 18,
                                               height: 18,
@@ -288,11 +274,55 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                                                   CircularProgressIndicator(
                                                       strokeWidth: 2),
                                             )
-                                          : const Icon(
-                                              Icons.delete_outline_rounded),
-                                      label: const Text('Delete'),
+                                          : const Icon(Icons.chat_rounded),
+                                      label: const Text('Start Chat'),
                                     ),
                                   ),
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: PressableScale(
+                                        onTap: () => context.push(
+                                            '/create-bot?id=${_bot!.id}'),
+                                        child: OutlinedButton.icon(
+                                          onPressed: () => context.push(
+                                              '/create-bot?id=${_bot!.id}'),
+                                          icon: const Icon(
+                                              Icons.edit_rounded),
+                                          label: const Text('Edit'),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: PressableScale(
+                                        onTap:
+                                            _deleting ? null : _confirmDelete,
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor:
+                                                theme.colorScheme.error,
+                                          ),
+                                          onPressed: _deleting
+                                              ? null
+                                              : _confirmDelete,
+                                          icon: _deleting
+                                              ? const SizedBox(
+                                                  width: 18,
+                                                  height: 18,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                          strokeWidth: 2),
+                                                )
+                                              : const Icon(Icons
+                                                  .delete_outline_rounded),
+                                          label: const Text('Delete'),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             )
