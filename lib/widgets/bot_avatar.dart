@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:rttext/core/animations.dart';
 
 /// Bot avatar: cached network image when available, otherwise a themed
 /// fallback with the bot's initial. Animates in on first appearance.
@@ -39,12 +40,12 @@ class BotAvatar extends StatelessWidget {
 
     return avatar
         .animate()
-        .fade(duration: 350.ms)
+        .fade(duration: Motion.emphasized)
         .scale(
           begin: const Offset(0.7, 0.7),
           end: const Offset(1, 1),
-          duration: 350.ms,
-          curve: Curves.easeOutBack,
+          duration: Motion.emphasized,
+          curve: Motion.springCurve,
         );
   }
 }

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/services/bots_service.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/placeholder_view.dart';
+import 'package:rttext/widgets/pressable_scale.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Discover tab: grid of public AI characters with client-side search.
@@ -123,6 +125,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     itemBuilder: (context, index) => _BotCard(
                       bot: bots[index],
                       index: index,
+                      onTap: () => context.go('/bot/${bots[index].id}'),
                     ),
                   ),
                 );
@@ -136,58 +139,62 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 }
 
 class _BotCard extends StatelessWidget {
-  const _BotCard({required this.bot, required this.index});
+  const _BotCard({required this.bot, required this.index, required this.onTap});
 
   final Bot bot;
   final int index;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => context.go('/bot/${bot.id}'),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Hero(
-                tag: 'bot-pfp-${bot.id}',
-                child: BotAvatar(name: bot.name, url: bot.pfpUrl, radius: 36),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                bot.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall,
-              ),
-              if ((bot.bio ?? '').isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  bot.bio!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+    return PressableScale(
+      onTap: onTap,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Hero(
+                  tag: 'bot-pfp-${bot.id}',
+                  child: BotAvatar(name: bot.name, url: bot.pfpUrl, radius: 36),
                 ),
+                const SizedBox(height: 10),
+                Text(
+                  bot.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall,
+                ),
+                if ((bot.bio ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    bot.bio!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
     )
-        .animate(delay: (60 * (index % 12)).ms)
-        .fade(duration: 350.ms)
+        .animate(delay: Motion.stagger(index, stepMs: 60))
+        .fade(duration: Motion.emphasized)
         .slideY(
           begin: 0.08,
           end: 0,
-          duration: 350.ms,
-          curve: Curves.easeOut,
+          duration: Motion.emphasized,
+          curve: Motion.decelerateCurve,
         );
   }
 }
@@ -224,14 +231,14 @@ class _EmptyDiscover extends StatelessWidget {
         ],
       )
           .animate()
-          .fade(duration: 500.ms)
+          .fade(duration: Motion.slow)
           .scale(
             begin: const Offset(0.92, 0.92),
             end: const Offset(1, 1),
-            duration: 450.ms,
-            curve: Curves.easeOutBack,
+            duration: Motion.slow,
+            curve: Motion.springCurve,
           )
-          .blur(begin: const Offset(4, 4), end: Offset.zero, duration: 500.ms),
+          .blur(begin: const Offset(4, 4), end: Offset.zero, duration: Motion.slow),
     );
   }
 }

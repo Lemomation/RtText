@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:rttext/core/animations.dart';
 
 /// Themed centered placeholder. Real screens still use it for error / empty
 /// states; an optional [actionLabel] renders an animated action button.
@@ -42,14 +43,14 @@ class PlaceholderView extends StatelessWidget {
         ],
       )
           .animate()
-          .fade(duration: 500.ms)
+          .fade(duration: Motion.slow)
           .scale(
             begin: const Offset(0.92, 0.92),
             end: const Offset(1, 1),
-            duration: 450.ms,
-            curve: Curves.easeOutBack,
+            duration: Motion.slow,
+            curve: Motion.springCurve,
           )
-          .blur(begin: const Offset(4, 4), end: Offset.zero, duration: 500.ms),
+          .blur(begin: const Offset(4, 4), end: Offset.zero, duration: Motion.slow),
     );
   }
 }

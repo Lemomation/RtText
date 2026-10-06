@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/conversation.dart';
 import 'package:rttext/services/conversations_service.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/placeholder_view.dart';
+import 'package:rttext/widgets/pressable_scale.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Chats tab: realtime list of conversations with swipe-to-delete and undo.
@@ -82,12 +84,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
         child: const Icon(Icons.add_rounded),
       )
           .animate()
-          .fade(delay: 300.ms, duration: 400.ms)
+          .fade(delay: 300.ms, duration: Motion.slow)
           .scale(
             begin: const Offset(0.6, 0.6),
             end: const Offset(1, 1),
-            duration: 400.ms,
-            curve: Curves.easeOutBack,
+            duration: Motion.slow,
+            curve: Motion.springCurve,
           ),
       body: StreamBuilder<List<Conversation>>(
         stream: _service.watchConversations(),
@@ -150,6 +152,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   child: _ChatTile(
                     conversation: c,
                     timeLabel: _timeLabel(c.lastMessageAt ?? c.createdAt),
+                    index: index,
                     onTap: () => context.go('/chat/${c.id}'),
                   ),
                 );
@@ -166,45 +169,76 @@ class _ChatTile extends StatelessWidget {
   const _ChatTile({
     required this.conversation,
     required this.timeLabel,
+    required this.index,
     required this.onTap,
   });
 
   final Conversation conversation;
   final String timeLabel;
+  final int index;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListTile(
+    return PressableScale(
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: BotAvatar(name: conversation.botName ?? '?', url: conversation.botPfpUrl, radius: 26),
-      title: Text(
-        conversation.botName ?? 'Unknown bot',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleSmall,
-      ),
-      subtitle: Text(
-        conversation.lastMessagePreview ?? 'Start the conversation',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+      child: ListTile(
+        onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: BotAvatar(
+          name: conversation.botName ?? '?',
+          url: conversation.botPfpUrl,
+          radius: 26,
+        ),
+        title: Text(
+          conversation.botName ?? 'Unknown bot',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleSmall,
+        ),
+        subtitle: Text(
+          conversation.lastMessagePreview ?? 'Start the conversation',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              timeLabel,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+            )
+                .animate(delay: Motion.stagger(index))
+                .fade(duration: Motion.standard)
+                .slideX(
+                  begin: -0.6,
+                  end: 0,
+                  duration: Motion.emphasized,
+                  curve: Motion.emphasizedCurve,
+                ),
+          ],
         ),
       ),
-      trailing: Text(
-        timeLabel,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    ).animate(delay: 80.ms).fade(duration: 300.ms).slideX(
+    )
+        .animate(delay: Motion.stagger(index))
+        .fade(duration: Motion.emphasized)
+        .slideX(
           begin: 0.05,
           end: 0,
-          duration: 300.ms,
-          curve: Curves.easeOut,
+          duration: Motion.emphasized,
+          curve: Motion.decelerateCurve,
         );
   }
 }

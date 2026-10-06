@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import 'package:rttext/auth/auth_controller.dart';
+import 'package:rttext/core/animations.dart';
 
 /// Splash/login screen with an animated logo and Google OAuth button.
 class LoginScreen extends StatefulWidget {
@@ -43,14 +44,14 @@ class _LoginScreenState extends State<LoginScreen> {
               const Spacer(),
               Icon(Icons.smart_toy_rounded, size: 88, color: theme.colorScheme.primary)
                   .animate()
-                  .fade(duration: 600.ms)
+                  .fade(duration: Motion.slow)
                   .scale(
                     begin: const Offset(0.6, 0.6),
                     end: const Offset(1, 1),
-                    duration: 600.ms,
-                    curve: Curves.easeOutBack,
+                    duration: Motion.slow,
+                    curve: Motion.springCurve,
                   )
-                  .blur(begin: const Offset(6, 6), end: Offset.zero, duration: 600.ms),
+                  .blur(begin: const Offset(6, 6), end: Offset.zero, duration: Motion.slow),
               const SizedBox(height: 16),
               Text(
                 'RtText',
@@ -58,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
-              ).animate().fade(delay: 200.ms, duration: 500.ms),
+              ).animate().fade(delay: 200.ms, duration: Motion.slow),
               const SizedBox(height: 8),
               Text(
                 'Chat with AI characters you create.',
@@ -66,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
-              ).animate().fade(delay: 350.ms, duration: 500.ms),
+              ).animate().fade(delay: 350.ms, duration: Motion.slow),
               const Spacer(),
               _GoogleButton(onPressed: _signingIn ? null : _signIn),
               const SizedBox(height: 24),
@@ -97,7 +98,12 @@ class _GoogleButton extends StatelessWidget {
       label: const Text('Continue with Google'),
     )
         .animate()
-        .fade(delay: 500.ms, duration: 400.ms)
-        .slideY(begin: 0.2, end: 0, duration: 400.ms, curve: Curves.easeOut);
+        .fade(delay: 500.ms, duration: Motion.slow)
+        .slideY(
+          begin: 0.2,
+          end: 0,
+          duration: Motion.slow,
+          curve: Motion.emphasizedCurve,
+        );
   }
 }

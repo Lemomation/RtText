@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/message.dart';
 import 'package:rttext/services/conversations_service.dart';
@@ -86,8 +87,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!_scrollController.hasClients) return;
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
-        duration: 250.ms,
-        curve: Curves.easeOut,
+        duration: Motion.standard,
+        curve: Motion.decelerateCurve,
       );
     });
   }
@@ -283,7 +284,7 @@ class _DateSeparator extends StatelessWidget {
           ),
         ),
       ),
-    ).animate().fade(duration: 300.ms);
+    ).animate().fade(duration: Motion.emphasized);
   }
 }
 
@@ -330,12 +331,12 @@ class _MessageBubble extends StatelessWidget {
 
     return bubble
         .animate()
-        .fade(duration: 250.ms)
+        .fade(duration: Motion.standard)
         .scale(
           begin: const Offset(0.85, 0.85),
           end: const Offset(1, 1),
-          duration: 380.ms,
-          curve: Curves.elasticOut,
+          duration: Motion.emphasized,
+          curve: Motion.springCurve,
           alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
         );
   }
@@ -361,11 +362,11 @@ class _EmptyThread extends StatelessWidget {
           ),
         ],
       ),
-    ).animate().fade(duration: 450.ms).scale(
+    ).animate().fade(duration: Motion.slow).scale(
           begin: const Offset(0.92, 0.92),
           end: const Offset(1, 1),
-          duration: 400.ms,
-          curve: Curves.easeOutBack,
+          duration: Motion.slow,
+          curve: Motion.springCurve,
         );
   }
 }
@@ -441,20 +442,20 @@ class _InputBarState extends State<_InputBar> {
             const SizedBox(width: 8),
             AnimatedRotation(
               turns: _hasText ? 0 : -0.25,
-              duration: 250.ms,
-              curve: Curves.easeOutBack,
+              duration: Motion.standard,
+              curve: Motion.springCurve,
               child: IconButton.filled(
                 onPressed: widget.enabled && _hasText ? widget.onSend : null,
                 icon: const Icon(Icons.send_rounded),
                 color: theme.colorScheme.onPrimary,
               ),
-            )
+                )
                 .animate(target: _hasText ? 1 : 0)
                 .scale(
                   begin: const Offset(0.85, 0.85),
                   end: const Offset(1, 1),
-                  duration: 250.ms,
-                  curve: Curves.easeOutBack,
+                  duration: Motion.standard,
+                  curve: Motion.springCurve,
                 ),
           ],
         ),

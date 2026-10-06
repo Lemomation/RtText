@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:rttext/core/animations.dart';
 import 'package:rttext/core/uuid.dart';
 import 'package:rttext/services/bots_service.dart';
 import 'package:rttext/widgets/placeholder_view.dart';
+import 'package:rttext/widgets/pressable_scale.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Character creator / editor. Create mode is at `/create-bot`; edit mode
@@ -34,6 +36,7 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
   bool _loadingEdit = false;
   bool _editFailed = false;
   bool _submitting = false;
+  bool _succeeded = false;
 
   bool get _isEdit => widget.botId != null;
 
@@ -112,7 +115,10 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
   Future<void> _submit() async {
     if (_submitting) return;
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _succeeded = false;
+    });
     final messenger = ScaffoldMessenger.of(context);
     try {
       final pfpUrl =
@@ -144,6 +150,9 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
           pfpUrl: pfpUrl,
         );
       }
+      // Loading -> success morph before popping so the user sees the check.
+      if (mounted) setState(() => _succeeded = true);
+      await Future<void>.delayed(Motion.slow + const Duration(milliseconds: 250));
       messenger.showSnackBar(
         SnackBar(
           content: Row(
@@ -155,10 +164,10 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                   .scale(
                     begin: const Offset(0.3, 0.3),
                     end: const Offset(1, 1),
-                    duration: 400.ms,
-                    curve: Curves.elasticOut,
+                    duration: Motion.slow,
+                    curve: Motion.springCurve,
                   )
-                  .fade(duration: 200.ms),
+                  .fade(duration: Motion.standard),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -199,33 +208,63 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                     padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
                     children: [
                       Center(
-                        child: GestureDetector(
+                        child: PressableScale(
                           onTap: _pickPfp,
-                          child: Stack(
-                            children: [
-                              _AvatarPreview(
-                                pickedPath: _pickedPfp?.path,
-                                url: _existingPfpUrl,
-                                name: _nameController.text,
-                              ),
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: CircleAvatar(
-                                  radius: 15,
-                                  backgroundColor:
-                                      theme.colorScheme.primary,
-                                  child: Icon(
-                                    Icons.add_a_photo_rounded,
-                                    size: 16,
-                                    color: theme.colorScheme.onPrimary,
+                          child: TweenAnimationBuilder<double>(
+                            // Re-runs the ring pulse whenever the image changes.
+                            key: ValueKey(_pickedPfp?.path ?? _existingPfpUrl),
+                            tween: Tween(begin: 0, end: 1),
+                            duration: Motion.slow,
+                            curve: Motion.decelerateCurve,
+                            builder: (context, t, child) {
+                              final pulse = (1 - t);
+                              return Stack(
+                                children: [
+                                  Container(
+                                    margin: const EdgeInsets.all(3),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: theme.colorScheme.primary
+                                            .withValues(alpha: 0.5 * pulse),
+                                        width: 2 + 4 * pulse,
+                                      ),
+                                    ),
+                                    child: child,
                                   ),
-                                ),
-                              ),
-                            ],
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: CircleAvatar(
+                                      radius: 15,
+                                      backgroundColor:
+                                          theme.colorScheme.primary,
+                                      child: Icon(
+                                        Icons.add_a_photo_rounded,
+                                        size: 16,
+                                        color: theme.colorScheme.onPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                            child: _AvatarPreview(
+                              pickedPath: _pickedPfp?.path,
+                              url: _existingPfpUrl,
+                              name: _nameController.text,
+                            ),
                           ),
                         ),
-                      ),
+                      )
+                          .animate(delay: Motion.stagger(0))
+                          .fade(duration: Motion.emphasized)
+                          .slideY(
+                            begin: 0.1,
+                            end: 0,
+                            duration: Motion.emphasized,
+                            curve: Motion.decelerateCurve,
+                          ),
                       const SizedBox(height: 24),
                       TextFormField(
                         key: const Key('bot-name-field'),
@@ -240,7 +279,15 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                             (value == null || value.trim().isEmpty)
                                 ? 'Give your character a name'
                                 : null,
-                      ),
+                      )
+                          .animate(delay: Motion.stagger(1))
+                          .fade(duration: Motion.emphasized)
+                          .slideY(
+                            begin: 0.08,
+                            end: 0,
+                            duration: Motion.emphasized,
+                            curve: Motion.decelerateCurve,
+                          ),
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _bioController,
@@ -251,7 +298,15 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                           hintText: 'One-liner shown in Discover',
                           counterText: '',
                         ),
-                      ),
+                      )
+                          .animate(delay: Motion.stagger(2))
+                          .fade(duration: Motion.emphasized)
+                          .slideY(
+                            begin: 0.08,
+                            end: 0,
+                            duration: Motion.emphasized,
+                            curve: Motion.decelerateCurve,
+                          ),
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _descriptionController,
@@ -262,7 +317,15 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                           labelText: 'Description',
                           hintText: 'Full backstory shown on the profile',
                         ),
-                      ),
+                      )
+                          .animate(delay: Motion.stagger(3))
+                          .fade(duration: Motion.emphasized)
+                          .slideY(
+                            begin: 0.08,
+                            end: 0,
+                            duration: Motion.emphasized,
+                            curve: Motion.decelerateCurve,
+                          ),
                       const SizedBox(height: 16),
                       TextFormField(
                         key: const Key('bot-sys-prompt-field'),
@@ -279,31 +342,50 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
                             (value == null || value.trim().isEmpty)
                                 ? 'Describe how it should behave'
                                 : null,
-                      ),
+                      )
+                          .animate(delay: Motion.stagger(4))
+                          .fade(duration: Motion.emphasized)
+                          .slideY(
+                            begin: 0.08,
+                            end: 0,
+                            duration: Motion.emphasized,
+                            curve: Motion.decelerateCurve,
+                          ),
                       const SizedBox(height: 28),
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton(
                           key: const Key('bot-submit'),
                           onPressed: _submitting ? null : _submit,
-                          child: _submitting
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
-                                )
-                              : Text(
-                                  _isEdit ? 'Save changes' : 'Create character',
-                                ),
+                          child: AnimatedSwitcher(
+                            duration: Motion.fast,
+                            child: _submitting
+                                ? (_succeeded
+                                    ? const Icon(
+                                        Icons.check_circle_outline_rounded,
+                                        key: ValueKey('submit-success'),
+                                      )
+                                    : const SizedBox(
+                                        key: ValueKey('submit-loading'),
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      ))
+                                : Text(
+                                    key: const ValueKey('submit-label'),
+                                    _isEdit ? 'Save changes' : 'Create character',
+                                  ),
+                          ),
                         ),
                       )
-                          .animate(target: _submitting ? 1 : 0)
-                          .scale(
-                            begin: const Offset(1, 1),
-                            end: const Offset(0.97, 0.97),
-                            duration: 180.ms,
-                            curve: Curves.easeOut,
+                          .animate(delay: Motion.stagger(5))
+                          .fade(duration: Motion.emphasized)
+                          .slideY(
+                            begin: 0.08,
+                            end: 0,
+                            duration: Motion.emphasized,
+                            curve: Motion.decelerateCurve,
                           ),
                     ],
                   ),

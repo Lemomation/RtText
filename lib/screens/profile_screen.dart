@@ -5,10 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:rttext/auth/auth_controller.dart';
+import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/profile.dart';
 import 'package:rttext/services/bots_service.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
+import 'package:rttext/widgets/pressable_scale.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Signed-in user profile: avatar + username (both editable), animated
@@ -133,8 +135,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   .scale(
                     begin: const Offset(0.4, 0.4),
                     end: const Offset(1, 1),
-                    duration: 350.ms,
-                    curve: Curves.easeOutBack,
+                    duration: Motion.emphasized,
+                    curve: Motion.springCurve,
                   ),
               const SizedBox(width: 12),
               const Expanded(child: Text('Username updated')),
@@ -170,10 +172,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 .scale(
                   begin: const Offset(0.5, 0.5),
                   end: const Offset(1, 1),
-                  duration: 350.ms,
-                  curve: Curves.easeOutBack,
+                  duration: Motion.emphasized,
+                  curve: Motion.springCurve,
                 )
-                .fade(duration: 250.ms),
+                .fade(duration: Motion.standard),
             const SizedBox(height: 12),
             const Text('You can sign back in anytime.'),
           ],
@@ -233,7 +235,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       horizontal: 24, vertical: 16),
                   children: [
                     Center(
-                      child: GestureDetector(
+                      child: PressableScale(
                         onTap: _pickAvatar,
                         child: Stack(
                           children: [
@@ -261,62 +263,96 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ],
                         ),
                       ),
-                    ),
+                    )
+                        .animate()
+                        .fade(duration: Motion.emphasized)
+                        .scale(
+                          begin: const Offset(0.85, 0.85),
+                          end: const Offset(1, 1),
+                          duration: Motion.slow,
+                          curve: Motion.springCurve,
+                        ),
                     const SizedBox(height: 16),
-                    _editingName
-                        ? Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  key: const Key('username-field'),
-                                  controller: _nameController,
-                                  autofocus: true,
-                                  maxLength: 24,
-                                  textInputAction: TextInputAction.done,
-                                  onSubmitted: (_) => _saveName(),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Username',
-                                    counterText: '',
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                key: const Key('save-username'),
-                                icon: _savingName
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2),
-                                      )
-                                    : const Icon(Icons.check_rounded),
-                                onPressed: _savingName ? null : _saveName,
-                              ),
-                            ],
-                          )
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  _profile?.username ?? 'Anonymous',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.titleLarge,
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.edit_rounded,
-                                    size: 18),
-                                tooltip: 'Edit username',
-                                onPressed: () {
-                                  _nameController.text =
-                                      _profile?.username ?? '';
-                                  setState(() => _editingName = true);
-                                },
-                              ),
-                            ],
+                    // Smooth expand/collapse between the username display and
+                    // the inline edit field.
+                    AnimatedSize(
+                      duration: Motion.standard,
+                      curve: Motion.emphasizedCurve,
+                      alignment: Alignment.topCenter,
+                      child: AnimatedSwitcher(
+                        duration: Motion.standard,
+                        switchInCurve: Motion.emphasizedCurve,
+                        switchOutCurve: Motion.emphasizedCurve.flipped,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween(
+                              begin: const Offset(0, 0.25),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
                           ),
+                        ),
+                        child: _editingName
+                            ? Row(
+                                key: const ValueKey('username-edit'),
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      key: const Key('username-field'),
+                                      controller: _nameController,
+                                      autofocus: true,
+                                      maxLength: 24,
+                                      textInputAction: TextInputAction.done,
+                                      onSubmitted: (_) => _saveName(),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Username',
+                                        counterText: '',
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    key: const Key('save-username'),
+                                    icon: _savingName
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          )
+                                        : const Icon(Icons.check_rounded),
+                                    onPressed: _savingName ? null : _saveName,
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                key: const ValueKey('username-display'),
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      _profile?.username ?? 'Anonymous',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleLarge,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_rounded,
+                                        size: 18),
+                                    tooltip: 'Edit username',
+                                    onPressed: () {
+                                      _nameController.text =
+                                          _profile?.username ?? '';
+                                      setState(() => _editingName = true);
+                                    },
+                                  ),
+                                ],
+                              ),
+                      ),
+                    )
+                        .animate(delay: 80.ms)
+                        .fade(duration: Motion.emphasized),
                     const SizedBox(height: 8),
                     Center(
                       child: Card(
@@ -338,7 +374,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   end: _profile?.credits ?? 0,
                                 ),
                                 duration: 800.ms,
-                                curve: Curves.easeOutCubic,
+                                curve: Motion.decelerateCurve,
                                 builder: (context, value, _) => Text(
                                   '$value',
                                   style: theme.textTheme.headlineSmall
@@ -361,7 +397,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                       ),
-                    ).animate().fade(delay: 150.ms, duration: 450.ms),
+                    ).animate().fade(delay: 150.ms, duration: Motion.slow),
                     const SizedBox(height: 28),
                     Text('My bots', style: theme.textTheme.titleMedium),
                     const SizedBox(height: 12),
@@ -406,13 +442,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ),
                                   ),
                                 )
-                                    .animate(delay: (60 * index).ms)
-                                    .fade(duration: 300.ms)
+                                    .animate(delay: Motion.stagger(index, stepMs: 60))
+                                    .fade(duration: Motion.emphasized)
                                     .slideY(
                                       begin: 0.1,
                                       end: 0,
-                                      duration: 300.ms,
-                                      curve: Curves.easeOut,
+                                      duration: Motion.emphasized,
+                                      curve: Motion.decelerateCurve,
                                     );
                               },
                             ),

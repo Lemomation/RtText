@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/services/bots_service.dart';
 import 'package:rttext/services/conversations_service.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/placeholder_view.dart';
+import 'package:rttext/widgets/pressable_scale.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Public profile of an AI character. Loads through the `public_bots` view so
@@ -99,10 +101,10 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                 .scale(
                   begin: const Offset(0.5, 0.5),
                   end: const Offset(1, 1),
-                  duration: 350.ms,
-                  curve: Curves.easeOutBack,
+                  duration: Motion.emphasized,
+                  curve: Motion.springCurve,
                 )
-                .fade(duration: 250.ms),
+                .fade(duration: Motion.standard),
             const SizedBox(height: 12),
             Text(
               'Chats with ${bot.name} will also be removed. This cannot be undone.',
@@ -139,8 +141,8 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                   .scale(
                     begin: const Offset(0.4, 0.4),
                     end: const Offset(1, 1),
-                    duration: 350.ms,
-                    curve: Curves.easeOutBack,
+                    duration: Motion.emphasized,
+                    curve: Motion.springCurve,
                   ),
               const SizedBox(width: 12),
               Expanded(child: Text('Deleted ${bot.name}')),
@@ -188,7 +190,15 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                             radius: 56,
                           ),
                         ),
-                      ),
+                      )
+                          .animate()
+                          .fade(duration: Motion.emphasized)
+                          .scale(
+                            begin: const Offset(0.8, 0.8),
+                            end: const Offset(1, 1),
+                            duration: Motion.slow,
+                            curve: Motion.springCurve,
+                          ),
                       const SizedBox(height: 20),
                       Center(
                         child: Text(
@@ -196,7 +206,15 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                           textAlign: TextAlign.center,
                           style: theme.textTheme.headlineSmall,
                         ),
-                      ),
+                      )
+                          .animate(delay: 80.ms)
+                          .fade(duration: Motion.emphasized)
+                          .slideY(
+                            begin: 0.15,
+                            end: 0,
+                            duration: Motion.emphasized,
+                            curve: Motion.emphasizedCurve,
+                          ),
                       if ((_bot!.bio ?? '').isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Center(
@@ -207,7 +225,15 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                               color: theme.colorScheme.primary,
                             ),
                           ),
-                        ),
+                        )
+                            .animate(delay: 160.ms)
+                            .fade(duration: Motion.emphasized)
+                            .slideY(
+                              begin: 0.15,
+                              end: 0,
+                              duration: Motion.emphasized,
+                              curve: Motion.emphasizedCurve,
+                            ),
                       ],
                       if ((_bot!.description ?? '').isNotEmpty) ...[
                         const SizedBox(height: 20),
@@ -217,10 +243,18 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                             color: theme.colorScheme.onSurfaceVariant,
                             height: 1.4,
                           ),
-                        ),
+                        )
+                            .animate(delay: 240.ms)
+                            .fade(duration: Motion.emphasized)
+                            .slideY(
+                              begin: 0.08,
+                              end: 0,
+                              duration: Motion.emphasized,
+                              curve: Motion.emphasizedCurve,
+                            ),
                       ],
                       const SizedBox(height: 32),
-                      _isOwner
+                      (_isOwner
                           ? Row(
                               children: [
                                 Expanded(
@@ -253,7 +287,7 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                               ],
                             )
                           : Center(
-                              child: _PressableScale(
+                              child: PressableScale(
                                 onTap: _startChat,
                                 child: SizedBox(
                                   width: 220,
@@ -270,50 +304,28 @@ class _BotProfileScreenState extends State<BotProfileScreen> {
                                     label: const Text('Start Chat'),
                                   ),
                                 ),
-                              ),
-                            ),
+                              )
+                                  .animate(delay: 320.ms)
+                                  .fade(duration: Motion.emphasized)
+                                  .scale(
+                                    begin: const Offset(0.9, 0.9),
+                                    end: const Offset(1, 1),
+                                    duration: Motion.slow,
+                                    curve: Motion.springCurve,
+                                  )
+                                  .shimmer(
+                                    delay: 700.ms,
+                                    duration: 900.ms,
+                                    color: theme.colorScheme.onPrimary,
+                                  ),
+                            ))
+                        .animate(delay: 320.ms)
+                        .fade(duration: Motion.emphasized),
                     ],
                   )
                       .animate()
-                      .fade(duration: 400.ms)
-                      .slideY(
-                        begin: 0.03,
-                        end: 0,
-                        duration: 350.ms,
-                        curve: Curves.easeOut,
-                      ),
+                      .fade(duration: Motion.slow),
                 ),
-    );
-  }
-}
-
-/// Wraps a child in a springy press-down scale for tactile feedback.
-class _PressableScale extends StatefulWidget {
-  const _PressableScale({required this.onTap, required this.child});
-
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  State<_PressableScale> createState() => _PressableScaleState();
-}
-
-class _PressableScaleState extends State<_PressableScale> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _pressed ? 0.95 : 1,
-        duration: 120.ms,
-        curve: Curves.easeOut,
-        child: widget.child,
-      ),
     );
   }
 }
