@@ -1,14 +1,18 @@
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:rttext/auth/auth_controller.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/profile.dart';
 import 'package:rttext/services/bots_service.dart';
+import 'package:rttext/services/updater_service.dart';
 import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/pressable_scale.dart';
@@ -34,12 +38,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _savingName = false;
   final _nameController = TextEditingController();
 
+  final _updater = UpdaterService();
+  String _installedVersion = '';
+  _UpdateStage _updateStage = _UpdateStage.idle;
+  UpdateInfo? _updateInfo;
+  File? _updateApk;
+  int _received = 0;
+  int _total = 0;
+
   String? get _uid => Supabase.instance.client.auth.currentUser?.id;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadVersion();
   }
 
   @override
@@ -153,6 +166,159 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } finally {
       if (mounted) setState(() => _savingName = false);
+    }
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() => _installedVersion = info.version);
+    } catch (_) {
+      // Version stays hidden where PackageInfo is unavailable (e.g. tests).
+    }
+  }
+
+  Future<void> _checkForUpdate() async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _updateStage = _UpdateStage.checking);
+    try {
+      final info = await _updater.check();
+      if (!mounted) return;
+      if (info.status == UpdateStatus.upToDate) {
+        setState(() => _updateStage = _UpdateStage.idle);
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('You\u2019re on the latest version'),
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _updateInfo = info;
+        _updateStage = _UpdateStage.available;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _updateStage = _UpdateStage.idle);
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Could not check for updates — check your connection and try again'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _downloadUpdate() async {
+    final url = _updateInfo?.downloadUrl;
+    if (url == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _updateStage = _UpdateStage.downloading;
+      _received = 0;
+      _total = 0;
+    });
+    try {
+      final apk = await _updater.download(
+        url,
+        onProgress: (received, total) {
+          if (!mounted || (received == _received && total == _total)) return;
+          setState(() {
+            _received = received;
+            _total = total;
+          });
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _updateApk = apk;
+        _updateStage = _UpdateStage.downloaded;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _updateStage = _UpdateStage.available);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Download failed — try again')),
+      );
+    }
+  }
+
+  Future<void> _installUpdate() async {
+    final apk = _updateApk;
+    if (apk == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _updater.install(apk);
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Install failed — allow installs from this app in system settings'),
+        ),
+      );
+    }
+  }
+
+  Widget _updateAction(ThemeData theme) {
+    switch (_updateStage) {
+      case _UpdateStage.checking:
+        return const SizedBox(
+          key: ValueKey('update-checking'),
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+      case _UpdateStage.available:
+        return SizedBox(
+          key: const ValueKey('update-available'),
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _downloadUpdate,
+            icon: const Icon(Icons.download_rounded),
+            label: Text('Download update v${_updateInfo!.latestVersion}'),
+          ),
+        );
+      case _UpdateStage.downloading:
+        return Column(
+          key: const ValueKey('update-downloading'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LinearProgressIndicator(
+              value: _total > 0 ? _received / _total : null,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _total > 0
+                  ? '${(_received / 1048576).toStringAsFixed(1)} of '
+                      '${(_total / 1048576).toStringAsFixed(1)} MB'
+                  : '${(_received / 1048576).toStringAsFixed(1)} MB',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        );
+      case _UpdateStage.downloaded:
+        return SizedBox(
+          key: const ValueKey('update-downloaded'),
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _installUpdate,
+            icon: const Icon(Icons.install_mobile_rounded),
+            label: const Text('Install update'),
+          ),
+        );
+      case _UpdateStage.idle:
+        return SizedBox(
+          key: const ValueKey('update-idle'),
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _checkForUpdate,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Check for updates'),
+          ),
+        );
     }
   }
 
@@ -450,6 +616,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               },
                             ),
                     ),
+                    const SizedBox(height: 28),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: theme
+                                      .colorScheme.primary
+                                      .withValues(alpha: 0.15),
+                                  child: Icon(
+                                    Icons.system_update_rounded,
+                                    size: 20,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'App updates',
+                                    style: theme.textTheme.titleMedium,
+                                  ),
+                                ),
+                                if (_installedVersion.isNotEmpty)
+                                  Text(
+                                    'v$_installedVersion',
+                                    style: theme.textTheme.bodyMedium
+                                        ?.copyWith(
+                                      color:
+                                          theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            AnimatedSwitcher(
+                              duration: Motion.standard,
+                              switchInCurve: Motion.emphasizedCurve,
+                              switchOutCurve: Motion.emphasizedCurve.flipped,
+                              alignment: Alignment.centerLeft,
+                              transitionBuilder: (child, animation) =>
+                                  FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: Tween(
+                                    begin: const Offset(0, 0.25),
+                                    end: Offset.zero,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              ),
+                              child: _updateAction(theme),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                        .animate()
+                        .fade(delay: 200.ms, duration: Motion.slow),
                     const SizedBox(height: 32),
                     SizedBox(
                       width: double.infinity,
@@ -464,6 +693,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 }
+
+/// Lifecycle of the app-update card: check → download → install handoff.
+enum _UpdateStage { idle, checking, available, downloading, downloaded }
 
 class _ProfileAvatar extends StatelessWidget {
   const _ProfileAvatar({this.url, required this.fallbackText});
