@@ -36,16 +36,17 @@ jobs:
 
       - name: Generate Gradle wrapper
         # The repo ships wrapper properties but not the wrapper jar; generate
-        # it so `flutter build apk` can invoke Gradle.
+        # it so `flutter build apk` can invoke Gradle. Version matches the
+        # Flutter stable template pin in android/gradle-wrapper.properties.
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.14'
-
-      - run: gradle wrapper --gradle-version 8.14
-        working-directory: android
+          gradle-version: '9.3.1'
 
       - name: Install dependencies
         run: flutter pub get
+
+      - run: gradle wrapper --gradle-version 9.3.1
+        working-directory: android
 
       - name: Analyze
         run: flutter analyze
