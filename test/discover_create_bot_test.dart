@@ -62,10 +62,13 @@ void main() {
 
     // The form is taller than the test viewport (and ListView builds
     // children lazily), so drag until the submit button is materialized —
-    // ensureVisible cannot see unbuilt children.
+    // ensureVisible cannot see unbuilt children. The scrollable must be
+    // pinned to the ListView: the multi-line TextFields embed their own
+    // Scrollables, so the default finder matches several.
     await tester.scrollUntilVisible(
       find.byKey(const Key('bot-submit')),
       200,
+      scrollable: find.byType(ListView),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('bot-submit')));
