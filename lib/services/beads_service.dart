@@ -18,7 +18,7 @@ class BeadsService {
         .select('beads')
         .eq('id', uid)
         .maybeSingle();
-    return ((row as Map<String, dynamic>?)?['beads'] as num?)?.toInt() ?? 0;
+    return row?['beads'] as int? ?? 0;
   }
 
   /// Claims the daily +20 beads. Returns the new balance, or null when the

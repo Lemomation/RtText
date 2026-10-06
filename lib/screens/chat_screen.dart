@@ -157,12 +157,12 @@ class _ChatScreenState extends State<ChatScreen> {
         _beads = 0;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Row(
             children: [
-              const BeadIcon(size: 20),
-              const SizedBox(width: 10),
-              const Expanded(
+              BeadIcon(size: 20),
+              SizedBox(width: 10),
+              Expanded(
                 child: Text('You\u2019re out of beads — claim 20 free ones '
                     'tomorrow to keep chatting'),
               ),
