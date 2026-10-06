@@ -1,17 +1,343 @@
-import 'package:flutter/material.dart';
-import 'package:rttext/widgets/placeholder_view.dart';
+import 'dart:io';
 
-/// Character creation form (populated in a later milestone).
-class CreateBotScreen extends StatelessWidget {
-  const CreateBotScreen({super.key});
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:rttext/core/uuid.dart';
+import 'package:rttext/services/bots_service.dart';
+import 'package:rttext/widgets/placeholder_view.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// Character creator / editor. Create mode is at `/create-bot`; edit mode
+/// passes the bot id as `/create-bot?id=<botId>`. In edit mode the owner's
+/// row (including `sys_prompt`) is fetched directly from `bots` — RLS only
+/// permits that read for the owner, so non-owners never see the prompt.
+class CreateBotScreen extends StatefulWidget {
+  const CreateBotScreen({super.key, this.botId});
+
+  final String? botId;
+
+  @override
+  State<CreateBotScreen> createState() => _CreateBotScreenState();
+}
+
+class _CreateBotScreenState extends State<CreateBotScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _bioController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _sysPromptController = TextEditingController();
+
+  XFile? _pickedPfp;
+  String? _existingPfpUrl;
+  bool _loadingEdit = false;
+  bool _editFailed = false;
+  bool _submitting = false;
+
+  bool get _isEdit => widget.botId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    // Keep the avatar's fallback initial in sync with the name field.
+    _nameController.addListener(() {
+      if (mounted) setState(() {});
+    });
+    if (_isEdit) _loadBot();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _bioController.dispose();
+    _descriptionController.dispose();
+    _sysPromptController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadBot() async {
+    setState(() => _loadingEdit = true);
+    try {
+      final bot = await BotsService(Supabase.instance.client)
+          .getOwnedById(widget.botId!);
+      if (!mounted) return;
+      if (bot == null) {
+        setState(() {
+          _editFailed = true;
+          _loadingEdit = false;
+        });
+        return;
+      }
+      _nameController.text = bot.name;
+      _bioController.text = bot.bio ?? '';
+      _descriptionController.text = bot.description ?? '';
+      _sysPromptController.text = bot.sysPrompt ?? '';
+      _existingPfpUrl = bot.pfpUrl;
+      setState(() => _loadingEdit = false);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _editFailed = true;
+        _loadingEdit = false;
+      });
+    }
+  }
+
+  Future<void> _pickPfp() async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
+    if (file != null) setState(() => _pickedPfp = file);
+  }
+
+  /// Uploads the picked avatar to the `pfp` bucket and returns its public URL.
+  Future<String?> _uploadPfp(XFile file) async {
+    final client = Supabase.instance.client;
+    final path = 'bot/${uuidV4()}.jpg';
+    final bytes = await file.readAsBytes();
+    await client.storage.from('pfp').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(
+            upsert: true,
+            contentType: 'image/jpeg',
+          ),
+        );
+    return client.storage.from('pfp').getPublicUrl(path);
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _submitting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final pfpUrl =
+          _pickedPfp != null ? await _uploadPfp(_pickedPfp!) : _existingPfpUrl;
+      final service = BotsService(Supabase.instance.client);
+      if (_isEdit) {
+        await service.update(
+          id: widget.botId!,
+          name: _nameController.text.trim(),
+          sysPrompt: _sysPromptController.text.trim(),
+          bio: _bioController.text.trim().isEmpty
+              ? null
+              : _bioController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
+          pfpUrl: pfpUrl,
+        );
+      } else {
+        await service.create(
+          name: _nameController.text.trim(),
+          sysPrompt: _sysPromptController.text.trim(),
+          bio: _bioController.text.trim().isEmpty
+              ? null
+              : _bioController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
+          pfpUrl: pfpUrl,
+        );
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                _isEdit ? Icons.check_circle_outline_rounded : Icons.stars_rounded,
+              )
+                  .animate()
+                  .scale(
+                    begin: const Offset(0.3, 0.3),
+                    end: const Offset(1, 1),
+                    duration: 400.ms,
+                    curve: Curves.elasticOut,
+                  )
+                  .fade(duration: 200.ms),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _isEdit
+                      ? 'Character updated'
+                      : 'Character created! +10 credits',
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (mounted) context.pop();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Save failed: $e')));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Create character')),
-      body: const PlaceholderView(
-        icon: Icons.auto_awesome,
-        label: 'Design your AI character here',
+      appBar: AppBar(
+        title: Text(_isEdit ? 'Edit character' : 'Create character'),
+      ),
+      body: _loadingEdit
+          ? const Center(child: CircularProgressIndicator())
+          : _editFailed
+              ? const PlaceholderView(
+                  icon: Icons.error_outline_rounded,
+                  label: 'Could not load this character',
+                )
+              : Form(
+                  key: _formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                    children: [
+                      Center(
+                        child: GestureDetector(
+                          onTap: _pickPfp,
+                          child: Stack(
+                            children: [
+                              _AvatarPreview(
+                                pickedPath: _pickedPfp?.path,
+                                url: _existingPfpUrl,
+                                name: _nameController.text,
+                              ),
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: CircleAvatar(
+                                  radius: 15,
+                                  backgroundColor:
+                                      theme.colorScheme.primary,
+                                  child: Icon(
+                                    Icons.add_a_photo_rounded,
+                                    size: 16,
+                                    color: theme.colorScheme.onPrimary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      TextFormField(
+                        key: const Key('bot-name-field'),
+                        controller: _nameController,
+                        textCapitalization: TextCapitalization.words,
+                        maxLength: 40,
+                        decoration: const InputDecoration(
+                          labelText: 'Name',
+                          counterText: '',
+                        ),
+                        validator: (value) =>
+                            (value == null || value.trim().isEmpty)
+                                ? 'Give your character a name'
+                                : null,
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _bioController,
+                        textCapitalization: TextCapitalization.sentences,
+                        maxLength: 80,
+                        decoration: const InputDecoration(
+                          labelText: 'Bio',
+                          hintText: 'One-liner shown in Discover',
+                          counterText: '',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _descriptionController,
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 2,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Description',
+                          hintText: 'Full backstory shown on the profile',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        key: const Key('bot-sys-prompt-field'),
+                        controller: _sysPromptController,
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 3,
+                        maxLines: 8,
+                        decoration: const InputDecoration(
+                          labelText: 'System prompt',
+                          helperText:
+                              'Hidden from users — shapes how the character behaves',
+                        ),
+                        validator: (value) =>
+                            (value == null || value.trim().isEmpty)
+                                ? 'Describe how it should behave'
+                                : null,
+                      ),
+                      const SizedBox(height: 28),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          key: const Key('bot-submit'),
+                          onPressed: _submitting ? null : _submit,
+                          child: _submitting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              : Text(
+                                  _isEdit ? 'Save changes' : 'Create character',
+                                ),
+                        ),
+                      )
+                          .animate(target: _submitting ? 1 : 0)
+                          .scale(
+                            begin: const Offset(1, 1),
+                            end: const Offset(0.97, 0.97),
+                            duration: 180.ms,
+                            curve: Curves.easeOut,
+                          ),
+                    ],
+                  ),
+                ),
+    );
+  }
+}
+
+class _AvatarPreview extends StatelessWidget {
+  const _AvatarPreview({this.pickedPath, this.url, required this.name});
+
+  final String? pickedPath;
+  final String? url;
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return CircleAvatar(
+      radius: 48,
+      backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.15),
+      foregroundImage: pickedPath != null
+          ? FileImage(File(pickedPath!))
+          : (url != null && url!.isNotEmpty
+              ? NetworkImage(url!)
+              : null),
+      onForegroundImageError: (_, _) {},
+      child: Text(
+        name.isEmpty ? '+' : name.characters.first.toUpperCase(),
+        style: TextStyle(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.bold,
+          fontSize: 28,
+        ),
       ),
     );
   }

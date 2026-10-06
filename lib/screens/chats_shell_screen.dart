@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:rttext/widgets/placeholder_view.dart';
 
 /// Shell with bottom navigation (Chats / Discover) hosting tab routes.
 class ChatsShellScreen extends StatelessWidget {
@@ -33,22 +32,6 @@ class ChatsShellScreen extends StatelessWidget {
             label: 'Discover',
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Placeholder grid for the Discover tab (populated in a later milestone).
-class DiscoverPlaceholder extends StatelessWidget {
-  const DiscoverPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Discover')),
-      body: const PlaceholderView(
-        icon: Icons.explore_rounded,
-        label: 'Find AI characters to chat with',
       ),
     );
   }

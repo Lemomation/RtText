@@ -5,6 +5,7 @@ import 'package:rttext/screens/bot_profile_screen.dart';
 import 'package:rttext/screens/chat_screen.dart';
 import 'package:rttext/screens/chats_screen.dart';
 import 'package:rttext/screens/chats_shell_screen.dart';
+import 'package:rttext/screens/discover_screen.dart';
 import 'package:rttext/screens/create_bot_screen.dart';
 import 'package:rttext/screens/login_screen.dart';
 import 'package:rttext/screens/profile_screen.dart';
@@ -34,7 +35,7 @@ abstract final class AppRouter {
               ),
               GoRoute(
                 path: '/discover',
-                builder: (context, state) => const DiscoverPlaceholder(),
+                builder: (context, state) => const DiscoverScreen(),
               ),
             ],
           ),
@@ -50,7 +51,9 @@ abstract final class AppRouter {
           ),
           GoRoute(
             path: '/create-bot',
-            builder: (context, state) => const CreateBotScreen(),
+            builder: (context, state) => CreateBotScreen(
+                  botId: state.uri.queryParameters['id'],
+                ),
           ),
           GoRoute(
             path: '/profile',

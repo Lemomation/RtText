@@ -21,6 +21,27 @@ class BotsService {
     return (rows as List).map((r) => Bot.fromMap(r as Map<String, dynamic>)).toList();
   }
 
+  String? get _uid => _client.auth.currentUser?.id;
+
+  /// Owner-only fetch straight from the `bots` table (RLS restricts reads to
+  /// the owner), including `sys_prompt` — used to prefill the edit form.
+  Future<Bot?> getOwnedById(String id) async {
+    final row = await _client.from('bots').select().eq('id', id).maybeSingle();
+    return row == null ? null : Bot.fromMap(row);
+  }
+
+  /// Bots the current user owns, for the profile screen's "My bots" list.
+  Future<List<Bot>> listMine() async {
+    final uid = _uid;
+    if (uid == null) return const [];
+    final rows = await _client
+        .from('public_bots')
+        .select(_publicColumns)
+        .eq('owner', uid)
+        .order('created_at', ascending: false);
+    return (rows as List).map((r) => Bot.fromMap(r as Map<String, dynamic>)).toList();
+  }
+
   Future<Bot?> getById(String id) async {
     final row = await _client
         .from('public_bots')
@@ -46,6 +67,28 @@ class BotsService {
       'pfp_url': pfpUrl,
       'is_public': isPublic,
     }).select(_publicColumns).single();
+    return Bot.fromMap(row);
+  }
+
+  /// Owner-only update of a bot row. `pfpUrl` may be null to leave the
+  /// current avatar untouched; pass it explicitly to change or clear it.
+  Future<Bot> update({
+    required String id,
+    required String name,
+    required String sysPrompt,
+    String? bio,
+    String? description,
+    String? pfpUrl,
+    bool isPublic = true,
+  }) async {
+    final row = await _client.from('bots').update({
+      'name': name,
+      'sys_prompt': sysPrompt,
+      'bio': bio,
+      'description': description,
+      'pfp_url': pfpUrl,
+      'is_public': isPublic,
+    }).eq('id', id).select(_publicColumns).single();
     return Bot.fromMap(row);
   }
 

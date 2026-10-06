@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
-/// Themed centered placeholder used by screens not yet implemented.
-/// Each milestone replaces these with real UI.
+/// Themed centered placeholder. Real screens still use it for error / empty
+/// states; an optional [actionLabel] renders an animated action button.
 class PlaceholderView extends StatelessWidget {
-  const PlaceholderView({super.key, required this.icon, required this.label});
+  const PlaceholderView({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.actionLabel,
+    this.onAction,
+  });
 
   final IconData icon;
   final String label;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +32,13 @@ class PlaceholderView extends StatelessWidget {
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 20),
+            FilledButton.tonal(
+              onPressed: onAction,
+              child: Text(actionLabel!),
+            ),
+          ],
         ],
       )
           .animate()
