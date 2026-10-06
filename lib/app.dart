@@ -18,12 +18,19 @@ class RtTextApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    if (misconfigured) {
+      return MaterialApp(
+        title: 'RtText',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.dark(),
+        home: const _MissingConfigScreen(),
+      );
+    }
+    return MaterialApp.router(
       title: 'RtText',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
-      routerConfig: misconfigured ? null : router,
-      home: misconfigured ? const _MissingConfigScreen() : null,
+      routerConfig: router,
     );
   }
 }

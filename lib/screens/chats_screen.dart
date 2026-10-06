@@ -130,7 +130,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
             child: ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
               itemCount: conversations.length,
-              separatorBuilder: (_, _) =>
+              separatorBuilder: (_, __) =>
                   const Divider(height: 1, indent: 76),
               itemBuilder: (context, index) {
                 final c = conversations[index];

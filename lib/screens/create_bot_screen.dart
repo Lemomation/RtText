@@ -330,7 +330,7 @@ class _AvatarPreview extends StatelessWidget {
           : (url != null && url!.isNotEmpty
               ? NetworkImage(url!)
               : null),
-      onForegroundImageError: (_, _) {},
+      onForegroundImageError: (_, __) {},
       child: Text(
         name.isEmpty ? '+' : name.characters.first.toUpperCase(),
         style: TextStyle(

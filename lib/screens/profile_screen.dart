@@ -381,7 +381,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           : ListView.separated(
                               scrollDirection: Axis.horizontal,
                               itemCount: _myBots.length,
-                              separatorBuilder: (_, _) =>
+                              separatorBuilder: (_, __) =>
                                   const SizedBox(width: 16),
                               itemBuilder: (context, index) {
                                 final bot = _myBots[index];
@@ -448,7 +448,7 @@ class _ProfileAvatar extends StatelessWidget {
       foregroundImage: (url != null && url!.isNotEmpty)
           ? NetworkImage(url!)
           : null,
-      onForegroundImageError: (_, _) {},
+      onForegroundImageError: (_, __) {},
       child: Text(
         fallbackText,
         style: TextStyle(

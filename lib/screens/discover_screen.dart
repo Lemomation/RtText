@@ -30,7 +30,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   void initState() {
     super.initState();
     _loadBots = widget.loadBots ??
-        (() => BotsService(Supabase.instance.client).listPublic());
+        (({int limit = 50}) =>
+            BotsService(Supabase.instance.client).listPublic(limit: limit));
     _future = _loadBots();
   }
 

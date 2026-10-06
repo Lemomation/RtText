@@ -33,7 +33,7 @@ class BotAvatar extends StatelessWidget {
             radius: radius,
             backgroundColor: theme.colorScheme.surface,
             foregroundImage: CachedNetworkImageProvider(url!),
-            onForegroundImageError: (_, _) {},
+            onForegroundImageError: (_, __) {},
             child: fallback.child,
           );
 

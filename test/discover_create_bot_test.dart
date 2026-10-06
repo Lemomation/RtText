@@ -10,7 +10,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: DiscoverScreen(loadBots: () async => const <Bot>[]),
+          body: DiscoverScreen(loadBots: ({int limit = 50}) async => const <Bot>[]),
         ),
       ),
     );
@@ -35,7 +35,7 @@ void main() {
     ];
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: DiscoverScreen(loadBots: () async => bots)),
+        home: Scaffold(body: DiscoverScreen(loadBots: ({int limit = 50}) async => bots)),
       ),
     );
     await tester.pump();
