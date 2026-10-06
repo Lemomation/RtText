@@ -60,7 +60,13 @@ void main() {
     expect(find.text('Name'), findsOneWidget);
     expect(find.text('System prompt'), findsOneWidget);
 
-    await tester.ensureVisible(find.byKey(const Key('bot-submit')));
+    // The form is taller than the test viewport (and ListView builds
+    // children lazily), so drag until the submit button is materialized —
+    // ensureVisible cannot see unbuilt children.
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('bot-submit')),
+      200,
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('bot-submit')));
     await tester.pump(const Duration(milliseconds: 400));
