@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rttext/auth/auth_controller.dart';
 import 'package:rttext/screens/bot_profile_screen.dart';

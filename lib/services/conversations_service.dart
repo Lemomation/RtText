@@ -73,8 +73,8 @@ class ConversationsService {
             .eq('conversation_id', c.id)
             .order('created_at', ascending: false)
             .limit(1);
-        if (last is List && last.isNotEmpty) {
-          final m = last.first as Map<String, dynamic>;
+        if (last.isNotEmpty) {
+          final m = last.first;
           final content = (m['content'] as String?) ?? '';
           previews[c.id] = m['role'] == 'user' ? 'You: $content' : content;
         }

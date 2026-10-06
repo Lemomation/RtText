@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -59,7 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final bots = await BotsService(client).listMine();
       if (!mounted) return;
       setState(() {
-        _profile = row == null ? null : Profile.fromMap(row as Map<String, dynamic>);
+        _profile = row == null ? null : Profile.fromMap(row);
         _myBots = bots;
         _loading = false;
         _failed = false;
@@ -81,7 +80,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       maxWidth: 1024,
       imageQuality: 85,
     );
-    if (file == null) return;
+    if (file == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final client = Supabase.instance.client;

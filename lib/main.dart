@@ -14,7 +14,7 @@ Future<void> main() async {
     return;
   }
 
-  await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
+  await Supabase.initialize(url: SupabaseConfig.url, publishableKey: SupabaseConfig.anonKey);
 
   final auth = AuthController(Supabase.instance.client)..start();
 
