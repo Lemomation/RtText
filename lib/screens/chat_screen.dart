@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/message.dart';
+import 'package:rttext/services/beads_service.dart';
 import 'package:rttext/services/conversations_service.dart';
+import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/typing_indicator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -31,11 +33,25 @@ class _ChatScreenState extends State<ChatScreen> {
   Bot? _bot;
   bool _awaitingReply = false;
 
+  /// Caller's bead balance; null = unknown (sending stays allowed and the
+  /// 402 from the edge function is the fallback enforcement).
+  int? _beads;
+
   @override
   void initState() {
     super.initState();
     _service = ConversationsService(Supabase.instance.client);
     _loadConversation();
+    _loadBalance();
+  }
+
+  Future<void> _loadBalance() async {
+    try {
+      final beads = await BeadsService(Supabase.instance.client).balance();
+      if (mounted) setState(() => _beads = beads);
+    } catch (_) {
+      // Balance stays unknown; the server still enforces the limit.
+    }
   }
 
   Future<void> _loadConversation() async {
@@ -95,7 +111,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _awaitingReply) return;
+    if (text.isEmpty || _awaitingReply || _beads == 0) return;
     _controller.clear();
 
     final optimistic = Message(
@@ -127,10 +143,33 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _generateReply(String sentText) async {
     setState(() => _awaitingReply = true);
     try {
-      await _service.requestAiReply(widget.chatId);
+      final result = await _service.requestAiReply(widget.chatId);
       if (!mounted) return;
-      setState(() => _awaitingReply = false);
+      setState(() {
+        _awaitingReply = false;
+        if (result.remainingBeads != null) _beads = result.remainingBeads;
+      });
       _scrollToBottom();
+    } on OutOfBeadsException {
+      if (!mounted) return;
+      setState(() {
+        _awaitingReply = false;
+        _beads = 0;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const BeadIcon(size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('You\u2019re out of beads — claim 20 free ones '
+                    'tomorrow to keep chatting'),
+              ),
+            ],
+          ),
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _awaitingReply = false);
@@ -222,9 +261,19 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
+          // Out-of-beads banner: collapse/expand between chats with balance.
+          AnimatedSize(
+            duration: Motion.standard,
+            curve: Motion.emphasizedCurve,
+            alignment: Alignment.bottomCenter,
+            child: _beads == 0
+                ? const _OutOfBeadsBanner()
+                : const SizedBox(width: double.infinity),
+          ),
           _InputBar(
             controller: _controller,
             enabled: !_awaitingReply,
+            outOfBeads: _beads == 0,
             onSend: _send,
           ),
         ],
@@ -371,16 +420,64 @@ class _EmptyThread extends StatelessWidget {
   }
 }
 
+class _OutOfBeadsBanner extends StatelessWidget {
+  const _OutOfBeadsBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Row(
+        children: [
+          const BeadIcon(size: 22)
+              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .scale(
+                begin: const Offset(1, 1),
+                end: const Offset(1.12, 1.12),
+                duration: Motion.slow,
+                curve: Motion.springCurve,
+              ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'You\u2019re out of beads — each reply costs 1. Come back '
+              'tomorrow for 20 free ones.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    )
+        .animate()
+        .fade(duration: Motion.standard)
+        .slideY(begin: 0.2, end: 0, duration: Motion.standard);
+  }
+}
+
 class _InputBar extends StatefulWidget {
   const _InputBar({
     required this.controller,
     required this.onSend,
     this.enabled = true,
+    this.outOfBeads = false,
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
   final bool enabled;
+  final bool outOfBeads;
 
   @override
   State<_InputBar> createState() => _InputBarState();
@@ -409,6 +506,7 @@ class _InputBarState extends State<_InputBar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final canType = widget.enabled && !widget.outOfBeads;
     return SafeArea(
       top: false,
       child: Padding(
@@ -418,14 +516,18 @@ class _InputBarState extends State<_InputBar> {
             Expanded(
               child: TextField(
                 controller: widget.controller,
-                enabled: widget.enabled,
+                enabled: canType,
                 minLines: 1,
                 maxLines: 5,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => widget.onSend(),
                 decoration: InputDecoration(
-                  hintText: 'Message…',
-                  suffixIcon: widget.enabled
+                  hintText: widget.outOfBeads
+                      ? 'Out of beads…'
+                      : widget.enabled
+                          ? 'Message…'
+                          : 'Waiting for reply…',
+                  suffixIcon: widget.enabled && !widget.outOfBeads
                       ? null
                       : const Padding(
                           padding: EdgeInsets.all(12),
@@ -445,7 +547,7 @@ class _InputBarState extends State<_InputBar> {
               duration: Motion.standard,
               curve: Motion.springCurve,
               child: IconButton.filled(
-                onPressed: widget.enabled && _hasText ? widget.onSend : null,
+                onPressed: canType && _hasText ? widget.onSend : null,
                 icon: const Icon(Icons.send_rounded),
                 color: theme.colorScheme.onPrimary,
               ),

@@ -1,6 +1,7 @@
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/conversation.dart';
 import 'package:rttext/models/message.dart';
+import 'package:rttext/services/beads_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Conversation & message access backed by Supabase (with realtime streams).
@@ -126,19 +127,30 @@ class ConversationsService {
   }
 
   /// Invokes the ai-reply edge function for this conversation.
-  Future<String> requestAiReply(String conversationId) async {
+  ///
+  /// Returns the reply text and the caller's remaining bead balance as
+  /// reported by the function. Throws [OutOfBeadsException] when the
+  /// function answered 402 (balance reached zero).
+  Future<AiReplyResult> requestAiReply(String conversationId) async {
     final res = await _client.functions.invoke(
       'ai-reply',
       body: {'conversation_id': conversationId},
     );
+    if (res.status == 402) {
+      throw const OutOfBeadsException();
+    }
     if (res.status != 200) {
       throw StateError('ai-reply failed (${res.status})');
     }
-    final content = (res.data as Map<String, dynamic>?)?['content'];
+    final data = res.data as Map<String, dynamic>?;
+    final content = data?['content'];
     if (content is! String || content.isEmpty) {
       throw StateError('ai-reply returned no content');
     }
-    return content;
+    return AiReplyResult(
+      content: content,
+      remainingBeads: (data?['beads'] as num?)?.toInt(),
+    );
   }
 
   Future<void> delete(String conversationId) =>

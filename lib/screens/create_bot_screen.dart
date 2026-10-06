@@ -186,9 +186,7 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  _isEdit
-                      ? 'Character updated'
-                      : 'Character created! +10 credits',
+                  _isEdit ? 'Character updated' : 'Character created!',
                 ),
               ),
             ],

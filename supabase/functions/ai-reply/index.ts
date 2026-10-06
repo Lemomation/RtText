@@ -1,8 +1,10 @@
 // Edge function: generate an AI reply for a conversation.
 // POST { conversation_id } with the caller's Supabase auth JWT.
-// Verifies ownership, loads the bot's sys_prompt plus the last ~20 messages,
-// calls the Gemma endpoint (OpenAI-compatible), inserts the assistant
-// message, and bumps conversations.last_message_at.
+// Verifies ownership, reserves 1 bead (refunded if generation fails),
+// loads the bot's sys_prompt plus the last ~20 messages, calls the Gemma
+// endpoint (OpenAI-compatible), inserts the assistant message, writes a
+// chat_spent ledger event, and bumps conversations.last_message_at.
+// Returns 402 { error: "out_of_beads" } when the balance is zero.
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -85,8 +87,23 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Forbidden" }, 403);
   }
 
-  // Service-role client to read sys_prompt from the bots table.
+  // Service-role client for beads, sys_prompt, and history.
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  // Reserve one bead atomically (spend_bead is service-role-only and only
+  // decrements when the balance is positive). If the Gemma call below fails
+  // the bead is refunded, so users are charged only for delivered replies.
+  const { data: reserved, error: spendError } = await admin.rpc("spend_bead", {
+    p_user: authData.user.id,
+  });
+  if (spendError) {
+    console.error("spend_bead failed", spendError);
+    return json({ error: "Could not check bead balance" }, 500);
+  }
+  if (typeof reserved !== "number" || reserved < 0) {
+    return json({ error: "out_of_beads" }, 402);
+  }
+  const refund = () => admin.rpc("refund_bead", { p_user: authData.user.id });
 
   const { data: bot, error: botError } = await admin
     .from("bots")
@@ -140,6 +157,7 @@ Deno.serve(async (req: Request) => {
     if (!gemmaRes.ok) {
       const detail = await gemmaRes.text();
       console.error("Gemma error", gemmaRes.status, detail);
+      await refund();
       return json({ error: "AI provider error" }, 502);
     }
     const payload = await gemmaRes.json();
@@ -147,27 +165,43 @@ Deno.serve(async (req: Request) => {
       payload?.choices?.[0]?.message?.content?.trim() ||
       "..." ;
     if (!content) {
+      await refund();
       return json({ error: "Empty AI response" }, 502);
     }
   } catch (err) {
     console.error("Gemma request failed", err);
+    await refund();
     return json({ error: "AI provider unreachable" }, 502);
   }
 
-  const { error: insertError } = await admin.from("messages").insert({
-    conversation_id: conversationId,
-    role: "assistant",
-    content,
-  });
+  const { data: inserted, error: insertError } = await admin
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content,
+    })
+    .select("id")
+    .single();
   if (insertError) {
     console.error("Insert assistant message failed", insertError);
+    await refund();
     return json({ error: "Failed to save reply" }, 500);
   }
+
+  // Ledger: the caller paid 1 bead for this reply.
+  await admin.from("credit_events").insert({
+    user_id: authData.user.id,
+    delta: -1,
+    reason: "chat_spent",
+    ref_conversation: conversationId,
+    ref_message: inserted?.id ?? null,
+  });
 
   await admin
     .from("conversations")
     .update({ last_message_at: new Date().toISOString() })
     .eq("id", conversationId);
 
-  return json({ content });
+  return json({ content, beads: reserved });
 });

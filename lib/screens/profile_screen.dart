@@ -9,12 +9,13 @@ import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/profile.dart';
 import 'package:rttext/services/bots_service.dart';
+import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/pressable_scale.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Signed-in user profile: avatar + username (both editable), animated
-/// credits counter, the user's own characters, and sign-out with a confirm
+/// beads counter, the user's own characters, and sign-out with a confirm
 /// dialog.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -362,16 +363,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.stars_rounded,
-                                color: theme.colorScheme.primary,
-                                size: 32,
-                              ),
+                              const BeadIcon(size: 32),
                               const SizedBox(width: 12),
                               TweenAnimationBuilder<int>(
                                 tween: IntTween(
                                   begin: 0,
-                                  end: _profile?.credits ?? 0,
+                                  end: _profile?.beads ?? 0,
                                 ),
                                 duration: 800.ms,
                                 curve: Motion.decelerateCurve,
@@ -386,7 +383,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                'credits',
+                                'beads',
                                 style:
                                     theme.textTheme.bodyMedium?.copyWith(
                                   color:
