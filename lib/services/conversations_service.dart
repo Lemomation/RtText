@@ -107,7 +107,7 @@ class ConversationsService {
           // Bot chats: role distinguishes the sides. DM chats: both sides are
           // 'user', so attribute via sender_id instead.
           final mine = c.isDm
-              ? m['sender_id'] == uid
+              ? m['sender_id'] == _uid
               : m['role'] == 'user';
           previews[c.id] = mine ? 'You: $content' : content;
         }

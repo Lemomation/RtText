@@ -1,3 +1,5 @@
+import 'dart:ui' as ui show TextDirection;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -552,7 +554,11 @@ class _BubbleTailShape extends ShapeBorder {
   EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
 
   @override
-  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+  Path getInnerPath(Rect rect, {ui.TextDirection? textDirection}) =>
+      Path()..addRRect(radius.toRRect(rect));
+
+  @override
+  Path getOuterPath(Rect rect, {ui.TextDirection? textDirection}) {
     final path = Path()..addRRect(radius.toRRect(rect));
     if (!showTail) return path;
 
@@ -598,7 +604,7 @@ class _BubbleTailShape extends ShapeBorder {
   }
 
   @override
-  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+  void paint(Canvas canvas, Rect rect, {ui.TextDirection? textDirection}) {
     // The fill is drawn by ShapeDecoration from [getOuterPath]; there is no
     // border to stroke.
   }
