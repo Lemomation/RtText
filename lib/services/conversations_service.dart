@@ -18,12 +18,19 @@ class ConversationsService {
     final uid = _uid;
     if (uid == null) return const Stream.empty();
     // Both DM participants must see the conversation, not just whoever
-    // initiated it (the initiator is user_id; the other side is dm_user_id).
+    // initiated it (initiator = user_id, the other side = dm_user_id). The
+    // realtime stream builder has no .or(), so subscribe unfiltered and
+    // filter client-side — realtime enforces the same participant-only RLS
+    // the table has, so only authorized rows ever arrive.
     return _client
         .from('conversations')
         .stream(primaryKey: ['id'])
-        .or('user_id.eq.$uid,dm_user_id.eq.$uid')
-        .asyncMap(_enrich);
+        .asyncMap((rows) {
+      final mine = rows
+          .where((r) => r['user_id'] == uid || r['dm_user_id'] == uid)
+          .toList();
+      return _enrich(mine.cast<Map<String, dynamic>>());
+    });
   }
 
   Future<List<Conversation>> fetchConversations() async {
