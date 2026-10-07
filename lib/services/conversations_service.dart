@@ -43,11 +43,18 @@ class ConversationsService {
     if (convs.isEmpty) return convs;
 
     // Bot metadata in one query via the public view (never sys_prompt).
-    try {
+    // DM conversations have no bot_id — a null/empty id in the filter list
+    // poisons the whole query (400), which left every bot as "Unknown bot".
+    final botIds = convs
+        .where((c) => !c.isDm && c.botId.isNotEmpty)
+        .map((c) => c.botId)
+        .toList();
+    if (botIds.isNotEmpty) {
+      try {
       final botRows = await _client
           .from('public_bots')
           .select('id,name,pfp_url')
-          .inFilter('id', convs.map((c) => c.botId).toList());
+          .inFilter('id', botIds);
       final byId = <String, Map<String, dynamic>>{};
       for (final r in (botRows as List)) {
         final m = r as Map<String, dynamic>;
@@ -60,8 +67,9 @@ class ConversationsService {
           botPfpUrl: b?['pfp_url'] as String?,
         );
       }).toList();
-    } catch (_) {
-      // Bot enrichment is best-effort; the list still renders.
+      } catch (_) {
+        // Bot enrichment is best-effort; the list still renders.
+      }
     }
 
     // Peer metadata for DM chats in one query via the people view

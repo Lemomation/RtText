@@ -174,25 +174,28 @@ Deno.serve(async (req: Request) => {
       ],
       max_tokens: 2048,
     });
-    // Google occasionally answers transient 500/503; one retry smooths it.
-    let gemmaRes = await fetch(GEMMA_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${GEMMA_API_KEY}`,
-      },
-      body: gemmaBody,
-    });
-    if ([500, 503, 429].includes(gemmaRes.status)) {
-      await new Promise((r) => setTimeout(r, 900));
-      gemmaRes = await fetch(GEMMA_ENDPOINT, {
+    // Google's free tier flakes with 429/500/503 ("high demand"); retry
+    // with backoff and fall back to a second model before giving up.
+    const GEMMA_FALLBACK_MODEL = "gemma-3-27b-it";
+    const attempt = async (model: string) =>
+      fetch(GEMMA_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${GEMMA_API_KEY}`,
         },
-        body: gemmaBody,
+        body: JSON.stringify({ ...JSON.parse(gemmaBody), model }),
+        signal: AbortSignal.timeout(30_000),
       });
+    let gemmaRes = await attempt(GEMMA_MODEL);
+    for (const delay of [900, 2500]) {
+      if (![429, 500, 503].includes(gemmaRes.status)) break;
+      await new Promise((r) => setTimeout(r, delay));
+      gemmaRes = await attempt(GEMMA_MODEL);
+    }
+    if (![200].includes(gemmaRes.status) && [429, 500, 503].includes(gemmaRes.status)) {
+      console.error("Falling back to", GEMMA_FALLBACK_MODEL);
+      gemmaRes = await attempt(GEMMA_FALLBACK_MODEL);
     }
     if (!gemmaRes.ok) {
       const detail = await gemmaRes.text();

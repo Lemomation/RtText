@@ -13,6 +13,7 @@ import 'package:rttext/widgets/app_toast.dart';
 import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/rt_icons.dart';
+import 'package:rttext/widgets/rt_markdown.dart';
 import 'package:rttext/widgets/typing_indicator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -179,8 +180,11 @@ class _ChatScreenState extends State<ChatScreen> {
       try {
         await _service.sendMessage(widget.chatId, text,
             senderIdToWrite: _myUid);
-        // The persisted row arrives via the realtime stream and replaces the
-        // optimistic copy.
+        if (mounted) {
+          setState(() {
+            _pending.removeWhere((p) => p.id == optimistic.id);
+          });
+        }
       } catch (_) {
         if (!mounted) return;
         showAppToast(context, 'Message not sent',
@@ -190,9 +194,17 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      await _service.sendMessage(widget.chatId, text);
-      // The persisted row arrives via the realtime stream and replaces the
-      // optimistic copy.
+      final row = await _service.sendMessage(widget.chatId, text);
+      // Drop the optimistic copy as soon as the server row exists — don't
+      // wait for the realtime echo, which can lag and show the bubble twice.
+      if (mounted) {
+        setState(() {
+          _pending.removeWhere((p) => p.id == optimistic.id);
+        });
+      }
+      // The persisted row arrives via the realtime stream; the returned row
+      // is only used to retire the optimistic bubble above.
+      assert(row.id.isNotEmpty);
     } catch (_) {
       // Leave the optimistic bubble in place; the AI retry toast below
       // still lets the user retry generation.
@@ -480,11 +492,15 @@ class _MessageBubble extends StatelessWidget {
     final textColor = isUser
         ? theme.colorScheme.onPrimary
         : (tint == null ? theme.colorScheme.onSurface : _onBubbleColor(tint));
+    // WhatsApp-style corner: the sender's bottom corner is nearly square on
+    // the first bubble of a group instead of a drawn fin (which rendered as
+    // a disconnected triangle on some devices).
+    final tailRadius = groupedWithPrev ? 8.0 : 5.0;
     final radius = BorderRadius.only(
       topLeft: const Radius.circular(20),
       topRight: const Radius.circular(20),
-      bottomLeft: Radius.circular(isUser ? 20 : (groupedWithPrev ? 8 : 20)),
-      bottomRight: Radius.circular(isUser ? (groupedWithPrev ? 8 : 20) : 20),
+      bottomLeft: Radius.circular(isUser ? 20 : tailRadius),
+      bottomRight: Radius.circular(isUser ? tailRadius : 20),
     );
     final bubble = Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -497,17 +513,10 @@ class _MessageBubble extends StatelessWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         constraints: const BoxConstraints(maxWidth: 320),
-        decoration: ShapeDecoration(
-          color: bubbleColor,
-          shape: _BubbleTailShape(
-            radius: radius,
-            showTail: !groupedWithPrev,
-            tailOnRight: isUser,
-          ),
-        ),
-        child: Text(
+        decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
+        child: RtMarkdownText(
           message.content,
-          style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
+          baseStyle: theme.textTheme.bodyMedium?.copyWith(color: textColor),
         ),
       ),
     );
@@ -523,85 +532,6 @@ class _MessageBubble extends StatelessWidget {
           alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
         );
   }
-}
-
-/// The bubble's fill shape: the existing rounded-rect geometry, plus a small
-/// WhatsApp-style tail hanging off the bottom corner when the message starts
-/// a new group (right side for my messages, left for the other side). The
-/// tail pokes ~9dp past the bubble edge and dips less than 2dp below it, so
-/// the bubble's own side/bottom margins keep it clear of neighbours.
-class _BubbleTailShape extends ShapeBorder {
-  const _BubbleTailShape({
-    required this.radius,
-    required this.showTail,
-    required this.tailOnRight,
-  });
-
-  final BorderRadius radius;
-  final bool showTail;
-  final bool tailOnRight;
-
-  @override
-  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
-
-  @override
-  Path getInnerPath(Rect rect, {ui.TextDirection? textDirection}) =>
-      Path()..addRRect(radius.toRRect(rect));
-
-  @override
-  Path getOuterPath(Rect rect, {ui.TextDirection? textDirection}) {
-    final path = Path()..addRRect(radius.toRRect(rect));
-    if (!showTail) return path;
-
-    const reach = 9.0; // how far the tip pokes past the bubble edge
-    // The fin wraps the bubble's bottom corner: it starts on the straight
-    // side edge just above the corner, flares out to a tip level with the
-    // bottom edge, and tucks back into the bottom edge. Unioning it with the
-    // rounded rect blends it into the corner seamlessly.
-    final tail = Path();
-    if (tailOnRight) {
-      tail
-        ..moveTo(rect.right, rect.bottom - 9)
-        ..quadraticBezierTo(
-          rect.right + 2,
-          rect.bottom - 3,
-          rect.right + reach,
-          rect.bottom + 1,
-        )
-        ..quadraticBezierTo(
-          rect.right + 2,
-          rect.bottom + 3,
-          rect.right - 13,
-          rect.bottom,
-        );
-    } else {
-      tail
-        ..moveTo(rect.left, rect.bottom - 9)
-        ..quadraticBezierTo(
-          rect.left - 2,
-          rect.bottom - 3,
-          rect.left - reach,
-          rect.bottom + 1,
-        )
-        ..quadraticBezierTo(
-          rect.left - 2,
-          rect.bottom + 3,
-          rect.left + 13,
-          rect.bottom,
-        );
-    }
-    tail.close();
-    return Path.combine(PathOperation.union, path, tail);
-  }
-
-  @override
-  void paint(Canvas canvas, Rect rect, {ui.TextDirection? textDirection}) {
-    // The fill is drawn by ShapeDecoration from [getOuterPath]; there is no
-    // border to stroke.
-  }
-
-  @override
-  ShapeBorder scale(double t) => this;
 }
 
 class _EmptyThread extends StatelessWidget {
