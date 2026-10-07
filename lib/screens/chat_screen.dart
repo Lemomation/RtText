@@ -182,6 +182,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // The persisted row arrives via the realtime stream and replaces the
         // optimistic copy.
       } catch (_) {
+        if (!mounted) return;
         showAppToast(context, 'Message not sent',
             style: AppToastStyle.error);
       }

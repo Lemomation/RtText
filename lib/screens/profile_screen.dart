@@ -118,6 +118,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .update({'avatar_url': url}).eq('id', uid);
       await _load();
     } catch (_) {
+      if (!mounted) return;
       showAppToast(context, 'Avatar update failed — try a different picture',
           style: AppToastStyle.error);
     }
