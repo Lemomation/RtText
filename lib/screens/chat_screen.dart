@@ -74,7 +74,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final conv = await Supabase.instance.client
           .from('conversations')
-          .select('bot_id,dm_user_id')
+          .select('bot_id,dm_user_id,user_id')
           .eq('id', widget.chatId)
           .maybeSingle();
       final dmUserId = conv?['dm_user_id'] as String?;
@@ -82,16 +82,19 @@ class _ChatScreenState extends State<ChatScreen> {
         // Human DM: free chat. Beads are never loaded here — the bead
         // balance RPC must stay unreachable on DM code paths.
         final myUid = Supabase.instance.client.auth.currentUser?.id;
+        final creatorId = conv?['user_id'] as String?;
         if (!mounted) return;
         setState(() {
           _isDm = true;
           _myUid = myUid;
         });
+        final peerId = myUid == dmUserId ? creatorId : dmUserId;
+        if (peerId == null) return;
         try {
           final peer = await Supabase.instance.client
               .from('people')
               .select('username,avatar_url')
-              .eq('id', dmUserId)
+              .eq('id', peerId)
               .maybeSingle();
           if (mounted) {
             setState(() {

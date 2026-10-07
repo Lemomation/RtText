@@ -83,13 +83,19 @@ class ConversationsService {
 
     // Peer metadata for DM chats in one query via the people view
     // (never beads). Bot enrichment above is untouched.
-    final dmIds = convs.where((c) => c.isDm).map((c) => c.dmUserId!).toList();
-    if (dmIds.isNotEmpty) {
+    final uid = _uid;
+    final peerIds = convs
+        .where((c) => c.isDm)
+        .map((c) => c.peerIdFor(uid ?? ''))
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (peerIds.isNotEmpty) {
       try {
         final peerRows = await _client
             .from('people')
             .select('id,username,avatar_url')
-            .inFilter('id', dmIds);
+            .inFilter('id', peerIds);
         final byId = <String, Map<String, dynamic>>{};
         for (final r in (peerRows as List)) {
           final m = r as Map<String, dynamic>;
@@ -97,7 +103,8 @@ class ConversationsService {
         }
         convs = convs.map((c) {
           if (!c.isDm) return c;
-          final p = byId[c.dmUserId!];
+          final peerId = c.peerIdFor(uid ?? '');
+          final p = peerId != null ? byId[peerId] : null;
           return c.copyWith(
             peerName: p?['username'] as String?,
             peerAvatarUrl: p?['avatar_url'] as String?,

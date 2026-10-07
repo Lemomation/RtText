@@ -38,6 +38,13 @@ class Conversation {
 
   bool get isDm => dmUserId != null;
 
+  /// Returns the other participant's user id in a DM given the caller's [myUid].
+  /// Returns null if this is a bot chat.
+  String? peerIdFor(String myUid) {
+    if (!isDm) return null;
+    return userId == myUid ? dmUserId : userId;
+  }
+
   Conversation copyWith({
     String? botName,
     String? botPfpUrl,
@@ -76,6 +83,7 @@ class Conversation {
         'id': id,
         'user_id': userId,
         'bot_id': botId,
+        if (dmUserId != null) 'dm_user_id': dmUserId,
         if (lastMessageAt != null)
           'last_message_at': lastMessageAt!.toIso8601String(),
         if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
