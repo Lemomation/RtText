@@ -3,14 +3,18 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/services/beads_service.dart';
+import 'package:rttext/services/updater_service.dart';
 import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/rt_icons.dart';
+import 'package:rttext/widgets/update_prompt_dialog.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Shell with bottom navigation (Chats / Discover) hosting tab routes.
 ///
 /// On first load it tries the lazy daily bead claim; when the server says a
 /// claim happened (first login of the day), a small celebration popup shows.
+/// It then checks in the background for app updates and prompts the user if
+/// a newer release is ready.
 class ChatsShellScreen extends StatefulWidget {
   const ChatsShellScreen({super.key, required this.child});
 
@@ -21,17 +25,37 @@ class ChatsShellScreen extends StatefulWidget {
 }
 
 class _ChatsShellScreenState extends State<ChatsShellScreen> {
+  static bool _hasCheckedForUpdate = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _claimDailyBeads());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _runStartupTasks());
+  }
+
+  Future<void> _runStartupTasks() async {
+    await _claimDailyBeads();
+    if (!mounted) return;
+    await _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (_hasCheckedForUpdate) return;
+    _hasCheckedForUpdate = true;
+    try {
+      final info = await UpdaterService().check();
+      if (!mounted || info.status != UpdateStatus.updateAvailable) return;
+      await showUpdatePromptDialog(context, info);
+    } catch (_) {
+      // Background check is non-intrusive; network issues are ignored.
+    }
   }
 
   Future<void> _claimDailyBeads() async {
     try {
       final balance = await BeadsService(Supabase.instance.client).claimDaily();
       if (balance == null || !mounted) return;
-      showDialog<void>(
+      await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
           content: Column(
