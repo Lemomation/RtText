@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
+import 'package:rttext/models/conversation.dart';
 import 'package:rttext/models/message.dart';
 import 'package:rttext/services/beads_service.dart';
 import 'package:rttext/services/conversations_service.dart';
