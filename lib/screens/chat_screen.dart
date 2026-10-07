@@ -25,9 +25,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// edge function generates the reply, and an optimistic-send input bar.
 /// DM chats are free: they never invoke ai-reply and never touch beads.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.chatId});
+  const ChatScreen({
+    super.key,
+    required this.chatId,
+    this.initialConversation,
+  });
 
   final String chatId;
+  final Conversation? initialConversation;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -69,6 +74,29 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _service = ConversationsService(Supabase.instance.client);
+    _myUid = Supabase.instance.client.auth.currentUser?.id;
+
+    final init = widget.initialConversation;
+    if (init != null) {
+      _isDm = init.isDm;
+      if (init.isDm) {
+        _peerName = init.peerName;
+        _peerAvatarUrl = init.peerAvatarUrl;
+        if (_myUid != null) {
+          _peerLastReadAt = init.peerLastReadAtFor(_myUid!);
+        }
+        _initTypingChannel();
+      } else if (init.botName != null) {
+        _bot = Bot(
+          id: init.botId,
+          userId: init.userId,
+          name: init.botName!,
+          pfpUrl: init.botPfpUrl,
+          greeting: '',
+        );
+      }
+    }
+
     _service.markAsRead(widget.chatId);
     _loadConversation();
     _listenToConversation();
@@ -84,7 +112,34 @@ class _ChatScreenState extends State<ChatScreen> {
       if (peerReadAt != _peerLastReadAt) {
         setState(() => _peerLastReadAt = peerReadAt);
       }
+      if (conv.isDm && (!_isDm || _peerName == null)) {
+        setState(() {
+          _isDm = true;
+          _myUid = myUid;
+        });
+        _initTypingChannel();
+        final peerId = conv.peerIdFor(myUid);
+        if (peerId != null) {
+          _fetchPeerInfo(peerId);
+        }
+      }
     });
+  }
+
+  Future<void> _fetchPeerInfo(String peerId) async {
+    try {
+      final peer = await Supabase.instance.client
+          .from('people')
+          .select('username,avatar_url')
+          .eq('id', peerId)
+          .maybeSingle();
+      if (mounted && peer != null) {
+        setState(() {
+          _peerName = peer['username'] as String?;
+          _peerAvatarUrl = peer['avatar_url'] as String?;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadBalance() async {
@@ -100,53 +155,41 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final conv = await Supabase.instance.client
           .from('conversations')
-          .select('bot_id,dm_user_id,user_id,user_last_read_at,dm_user_last_read_at')
+          .select('id,bot_id,dm_user_id,user_id,user_last_read_at,dm_user_last_read_at')
           .eq('id', widget.chatId)
           .maybeSingle();
-      if (conv != null) {
-        final parsed = Conversation.fromMap(conv);
-        final myUid = Supabase.instance.client.auth.currentUser?.id;
-        if (myUid != null && mounted) {
-          setState(() {
+      if (conv == null) return;
+
+      final parsed = Conversation.fromMap(conv);
+      final myUid = _myUid ?? Supabase.instance.client.auth.currentUser?.id;
+      if (mounted) {
+        setState(() {
+          _myUid = myUid;
+          if (myUid != null) {
             _peerLastReadAt = parsed.peerLastReadAtFor(myUid);
-          });
-        }
+          }
+        });
       }
-      final dmUserId = conv?['dm_user_id'] as String?;
+      final dmUserId = parsed.dmUserId;
       if (dmUserId != null) {
         // Human DM: free chat. Beads are never loaded here — the bead
         // balance RPC must stay unreachable on DM code paths.
-        final myUid = Supabase.instance.client.auth.currentUser?.id;
-        final creatorId = conv?['user_id'] as String?;
         if (!mounted) return;
         setState(() {
           _isDm = true;
           _myUid = myUid;
         });
         _initTypingChannel();
-        final peerId = myUid == dmUserId ? creatorId : dmUserId;
-        if (peerId == null) return;
-        try {
-          final peer = await Supabase.instance.client
-              .from('people')
-              .select('username,avatar_url')
-              .eq('id', peerId)
-              .maybeSingle();
-          if (mounted) {
-            setState(() {
-              _peerName = peer?['username'] as String?;
-              _peerAvatarUrl = peer?['avatar_url'] as String?;
-            });
-          }
-        } catch (_) {
-          // App bar simply keeps the generic title.
+        final peerId = parsed.peerIdFor(myUid ?? '');
+        if (peerId != null) {
+          await _fetchPeerInfo(peerId);
         }
         return;
       }
       // Bot chat: load the bead balance while the bot metadata fetches.
       _loadBalance();
-      final botId = conv?['bot_id'] as String?;
-      if (botId != null && mounted) {
+      final botId = parsed.botId;
+      if (botId.isNotEmpty && mounted) {
         final bot = await _service.botFor(botId);
         if (mounted) setState(() => _bot = bot);
       }
@@ -156,6 +199,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _initTypingChannel() {
+    if (_typingChannel != null) return;
     _typingChannel =
         Supabase.instance.client.channel('chat_presence:${widget.chatId}');
     _typingChannel!
@@ -514,12 +558,11 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           // DMs have no character profile to open.
-          if (!_isDm)
+          if (!_isDm && _bot != null)
             IconButton(
               icon: const Icon(Icons.smart_toy_outlined),
               tooltip: 'Character profile',
-              onPressed:
-                  _bot == null ? null : () => context.push('/bot/${_bot!.id}'),
+              onPressed: () => context.push('/bot/${_bot!.id}'),
             ),
         ],
       ),
@@ -547,7 +590,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   final messages = [...server, ..._pending];
                   if (messages.isEmpty) {
                     return _EmptyThread(
-                      botName: _isDm ? _peerName : _bot?.name,
+                      name: _isDm ? _peerName : _bot?.name,
+                      isDm: _isDm,
                     );
                   }
                   _service.markAsRead(widget.chatId);
@@ -664,11 +708,14 @@ Color? _parseBubbleColor(String? hex) {
   return value == null ? null : Color(0xFF000000 | value);
 }
 
-/// Text color that stays legible on a custom bubble tint.
-Color _onBubbleColor(Color background) =>
-    ThemeData.estimateBrightnessForColor(background) == Brightness.dark
-        ? Colors.white
-        : Colors.black87;
+/// Text color that stays legible on any bubble background.
+/// Uses luminance to guarantee high contrast:
+/// - Light bubbles (> 0.40 luminance) get deep charcoal / dark slate (#0F172A).
+/// - Dark bubbles (<= 0.40 luminance) get pure white (#FFFFFF).
+Color _onBubbleColor(Color background) {
+  final luminance = background.computeLuminance();
+  return luminance > 0.40 ? const Color(0xFF0F172A) : Colors.white;
+}
 
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
@@ -706,9 +753,9 @@ class _MessageBubble extends StatelessWidget {
     final bubbleColor = isUser
         ? theme.colorScheme.primary
         : (tint ?? theme.colorScheme.surface);
-    final textColor = isUser
-        ? theme.colorScheme.onPrimary
-        : (tint == null ? theme.colorScheme.onSurface : _onBubbleColor(tint));
+    final textColor = _onBubbleColor(bubbleColor);
+    final isBubbleLight =
+        ThemeData.estimateBrightnessForColor(bubbleColor) == Brightness.light;
     // WhatsApp-style corner: the sender's bottom corner is nearly square on
     // the first bubble of a group instead of a drawn fin (which rendered as
     // a disconnected triangle on some devices).
@@ -769,7 +816,9 @@ class _MessageBubble extends StatelessWidget {
                               : Icons.check_rounded),
                       size: isRead ? 14 : 12,
                       color: isRead
-                          ? const Color(0xFF53BDEB)
+                          ? (isBubbleLight
+                              ? const Color(0xFF0284C7)
+                              : const Color(0xFF53BDEB))
                           : textColor.withValues(alpha: 0.75),
                     ),
                   ],
@@ -795,21 +844,23 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _EmptyThread extends StatelessWidget {
-  const _EmptyThread({this.botName});
+  const _EmptyThread({this.name, this.isDm = false});
 
-  final String? botName;
+  final String? name;
+  final bool isDm;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final fallbackLabel = isDm ? 'your friend' : 'your bot';
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          BotAvatar(name: botName ?? '?', radius: 36),
+          BotAvatar(name: name ?? '?', radius: 36),
           const SizedBox(height: 16),
           Text(
-            'Say hi to ${botName ?? 'your bot'}!',
+            'Say hi to ${name ?? fallbackLabel}!',
             style: theme.textTheme.titleMedium,
           ),
         ],

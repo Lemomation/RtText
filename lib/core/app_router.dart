@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:rttext/auth/auth_controller.dart';
 import 'package:rttext/core/animations.dart';
+import 'package:rttext/models/conversation.dart';
 import 'package:rttext/screens/bot_profile_screen.dart';
 import 'package:rttext/screens/chat_screen.dart';
 import 'package:rttext/screens/chats_screen.dart';
@@ -47,7 +48,10 @@ abstract final class AppRouter {
             path: '/chat/:id',
             pageBuilder: (context, state) => Motion.page(
               state: state,
-              child: ChatScreen(chatId: state.pathParameters['id'] ?? ''),
+              child: ChatScreen(
+                chatId: state.pathParameters['id'] ?? '',
+                initialConversation: state.extra as Conversation?,
+              ),
             ),
           ),
           GoRoute(

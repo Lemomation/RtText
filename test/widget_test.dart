@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rttext/app.dart';
 import 'package:rttext/widgets/placeholder_view.dart';
+import 'package:rttext/widgets/rt_markdown.dart';
 
 void main() {
   testWidgets('shows configuration error UI when dart-defines are missing',
@@ -28,5 +29,22 @@ void main() {
 
     expect(find.byIcon(Icons.forum_outlined), findsOneWidget);
     expect(find.text('Hello'), findsOneWidget);
+  });
+
+  testWidgets('RtMarkdownText applies baseStyle color to rich text',
+      (tester) async {
+    const textColor = Color(0xFF0F172A);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: RtMarkdownText(
+            'Hello **bold** and *italic* text',
+            baseStyle: TextStyle(color: textColor, fontSize: 16),
+          ),
+        ),
+      ),
+    );
+    final textWidget = tester.widget<Text>(find.byType(Text));
+    expect(textWidget.textSpan?.style?.color, textColor);
   });
 }

@@ -164,7 +164,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     conversation: c,
                     timeLabel: _timeLabel(c.lastMessageAt ?? c.createdAt),
                     index: index,
-                    onTap: () => context.push('/chat/${c.id}'),
+                    onTap: () => context.push('/chat/${c.id}', extra: c),
                   ),
                 );
               },

@@ -94,22 +94,22 @@ class Conversation {
       );
 
   factory Conversation.fromMap(Map<String, dynamic> map) => Conversation(
-        id: map['id'] as String,
-        userId: map['user_id'] as String? ?? '',
-        botId: map['bot_id'] as String? ?? '',
+        id: (map['id'] as String?) ?? '',
+        userId: (map['user_id'] as String?) ?? '',
+        botId: (map['bot_id'] as String?) ?? '',
         dmUserId: map['dm_user_id'] as String?,
         lastMessageAt: map['last_message_at'] == null
             ? null
-            : DateTime.parse(map['last_message_at'] as String),
+            : DateTime.tryParse(map['last_message_at'] as String),
         createdAt: map['created_at'] == null
             ? null
-            : DateTime.parse(map['created_at'] as String),
+            : DateTime.tryParse(map['created_at'] as String),
         userLastReadAt: map['user_last_read_at'] == null
             ? null
-            : DateTime.parse(map['user_last_read_at'] as String),
+            : DateTime.tryParse(map['user_last_read_at'] as String),
         dmUserLastReadAt: map['dm_user_last_read_at'] == null
             ? null
-            : DateTime.parse(map['dm_user_last_read_at'] as String),
+            : DateTime.tryParse(map['dm_user_last_read_at'] as String),
       );
 
   Map<String, dynamic> toMap() => {

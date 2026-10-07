@@ -32,7 +32,10 @@ class RtMarkdownText extends StatelessWidget {
     var cursor = 0;
     for (final match in _tokenPattern.allMatches(data)) {
       if (match.start > cursor) {
-        spans.add(TextSpan(text: data.substring(cursor, match.start)));
+        spans.add(TextSpan(
+          text: data.substring(cursor, match.start),
+          style: base,
+        ));
       }
       final text = match.group(0)!;
       if (text.startsWith('**')) {
@@ -45,11 +48,17 @@ class RtMarkdownText extends StatelessWidget {
       cursor = match.end;
     }
     if (cursor < data.length) {
-      spans.add(TextSpan(text: data.substring(cursor)));
+      spans.add(TextSpan(
+        text: data.substring(cursor),
+        style: base,
+      ));
     }
 
     return Text.rich(
-      TextSpan(children: _withListMarkers(spans, base)),
+      TextSpan(
+        style: base,
+        children: _withListMarkers(spans, base),
+      ),
     );
   }
 
@@ -78,7 +87,7 @@ class RtMarkdownText extends StatelessWidget {
       }
       out.add(TextSpan(
         text: buffer.toString(),
-        style: span.style,
+        style: span.style ?? base,
         children: span.children,
       ));
     }

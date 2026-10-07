@@ -127,7 +127,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       final conv = await _service.getOrCreateDm(id);
       if (!mounted) return;
       setState(() => _creatingDmFor = null);
-      await router.push('/chat/${conv.id}');
+      await router.push('/chat/${conv.id}', extra: conv);
     } catch (_) {
       if (!mounted) return;
       setState(() => _creatingDmFor = null);

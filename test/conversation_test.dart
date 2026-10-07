@@ -66,6 +66,19 @@ void main() {
       expect(conv.lastReadAtFor('user-2'), conv.dmUserLastReadAt);
       expect(conv.peerLastReadAtFor('user-2'), conv.userLastReadAt);
     });
+
+    test('handles missing id and malformed timestamps gracefully', () {
+      final map = <String, dynamic>{
+        'user_id': 'user-1',
+        'bot_id': '',
+        'dm_user_id': 'user-2',
+        'created_at': 'invalid-date',
+      };
+      final conv = Conversation.fromMap(map);
+      expect(conv.id, '');
+      expect(conv.createdAt, isNull);
+      expect(conv.isDm, isTrue);
+    });
   });
 
   group('Message model', () {
