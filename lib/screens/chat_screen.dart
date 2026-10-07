@@ -1,5 +1,8 @@
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -46,6 +49,10 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _peerName;
   String? _peerAvatarUrl;
 
+  RealtimeChannel? _typingChannel;
+  bool _peerTyping = false;
+  Timer? _peerTypingTimer;
+
   /// Caller's bead balance; null = unknown (sending stays allowed and the
   /// 402 from the edge function is the fallback enforcement).
   int? _beads;
@@ -88,6 +95,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _isDm = true;
           _myUid = myUid;
         });
+        _initTypingChannel();
         final peerId = myUid == dmUserId ? creatorId : dmUserId;
         if (peerId == null) return;
         try {
@@ -119,10 +127,58 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _initTypingChannel() {
+    _typingChannel =
+        Supabase.instance.client.channel('chat_presence:${widget.chatId}');
+    _typingChannel!
+        .onBroadcast(
+          event: 'typing',
+          callback: (payload) {
+            final senderId = payload['user_id'] as String?;
+            if (senderId != null && senderId != _myUid) {
+              _setPeerTyping(true);
+            }
+          },
+        )
+        .onBroadcast(
+          event: 'stop_typing',
+          callback: (payload) {
+            final senderId = payload['user_id'] as String?;
+            if (senderId != null && senderId != _myUid) {
+              _setPeerTyping(false);
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  void _setPeerTyping(bool typing) {
+    _peerTypingTimer?.cancel();
+    if (typing) {
+      _peerTypingTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _peerTyping = false);
+      });
+    }
+    if (mounted) setState(() => _peerTyping = typing);
+  }
+
+  void _onTypingChanged(bool isTyping) {
+    if (!_isDm || _typingChannel == null || _myUid == null) return;
+    _typingChannel?.sendBroadcastMessage(
+      event: isTyping ? 'typing' : 'stop_typing',
+      payload: {'user_id': _myUid!},
+    );
+  }
+
   @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    _peerTypingTimer?.cancel();
+    final channel = _typingChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
     super.dispose();
   }
 
@@ -161,6 +217,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty || _awaitingReply || _beads == 0) return;
     _controller.clear();
+    _onTypingChanged(false);
 
     final optimistic = Message(
       id: 'pending-${DateTime.now().millisecondsSinceEpoch}',
@@ -255,6 +312,102 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _showMessageActions(Message message, bool isMine) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.copy_rounded),
+                  title: const Text('Copy text'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Clipboard.setData(ClipboardData(text: message.content));
+                    showAppToast(context, 'Copied to clipboard',
+                        style: AppToastStyle.info);
+                  },
+                ),
+                if ((isMine || !_isDm) && !message.pending)
+                  ListTile(
+                    leading: Icon(
+                      Icons.delete_outline_rounded,
+                      color: theme.colorScheme.error,
+                    ),
+                    title: Text(
+                      'Delete message',
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _confirmDeleteMessage(message);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmDeleteMessage(Message message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete message?'),
+        content: const Text(
+          'This message will be deleted for everyone in this chat.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _service.deleteMessage(message.id);
+        if (!mounted) return;
+        showAppToast(context, 'Message deleted', style: AppToastStyle.info);
+      } catch (_) {
+        if (!mounted) return;
+        showAppToast(context, 'Failed to delete message',
+            style: AppToastStyle.error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
@@ -284,6 +437,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    if (_peerTyping)
+                      Text(
+                        'typing…',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      ),
                   ],
                 ),
               ),
@@ -382,6 +542,7 @@ class _ChatScreenState extends State<ChatScreen> {
             enabled: !_awaitingReply,
             outOfBeads: _beads == 0,
             onSend: _send,
+            onTypingChanged: _onTypingChanged,
           ),
         ],
       ),
@@ -414,10 +575,13 @@ class _ChatScreenState extends State<ChatScreen> {
           myUserId: _myUid,
           groupedWithPrev:
               !separator && prev != null && _isMine(prev) == _isMine(message),
+          onLongPress: () => _showMessageActions(message, _isMine(message)),
         ),
       );
     }
-    if (!_isDm && _awaitingReply) items.add(const TypingIndicator());
+    if ((!_isDm && _awaitingReply) || (_isDm && _peerTyping)) {
+      items.add(const TypingIndicator());
+    }
     return ListView(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -475,6 +639,7 @@ class _MessageBubble extends StatelessWidget {
     this.isDm = false,
     this.myUserId,
     this.groupedWithPrev = false,
+    this.onLongPress,
   });
 
   final Message message;
@@ -487,6 +652,7 @@ class _MessageBubble extends StatelessWidget {
   final bool isDm;
   final String? myUserId;
   final bool groupedWithPrev;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -513,21 +679,60 @@ class _MessageBubble extends StatelessWidget {
       bottomLeft: Radius.circular(isUser ? 20 : tailRadius),
       bottomRight: Radius.circular(isUser ? tailRadius : 20),
     );
+
+    final createdAt = message.createdAt?.toLocal();
+    final timeLabel =
+        createdAt != null ? DateFormat.jm().format(createdAt) : '';
+
     final bubble = Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: EdgeInsets.only(
-          left: isUser ? 48 : 12,
-          right: isUser ? 12 : 48,
-          top: groupedWithPrev ? 2 : 6,
-          bottom: 2,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        constraints: const BoxConstraints(maxWidth: 320),
-        decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
-        child: RtMarkdownText(
-          message.content,
-          baseStyle: theme.textTheme.bodyMedium?.copyWith(color: textColor),
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: Container(
+          margin: EdgeInsets.only(
+            left: isUser ? 48 : 12,
+            right: isUser ? 12 : 48,
+            top: groupedWithPrev ? 2 : 6,
+            bottom: 2,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          constraints: const BoxConstraints(maxWidth: 320),
+          decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RtMarkdownText(
+                message.content,
+                baseStyle:
+                    theme.textTheme.bodyMedium?.copyWith(color: textColor),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    timeLabel,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      color: textColor.withValues(alpha: 0.65),
+                    ),
+                  ),
+                  if (isUser) ...[
+                    const SizedBox(width: 3),
+                    Icon(
+                      message.pending
+                          ? Icons.access_time_rounded
+                          : Icons.check_rounded,
+                      size: 12,
+                      color: textColor.withValues(alpha: 0.75),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -624,12 +829,14 @@ class _InputBar extends StatefulWidget {
   const _InputBar({
     required this.controller,
     required this.onSend,
+    this.onTypingChanged,
     this.enabled = true,
     this.outOfBeads = false,
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
+  final ValueChanged<bool>? onTypingChanged;
   final bool enabled;
   final bool outOfBeads;
 
@@ -639,6 +846,7 @@ class _InputBar extends StatefulWidget {
 
 class _InputBarState extends State<_InputBar> {
   bool _hasText = false;
+  Timer? _typingDebounce;
 
   @override
   void initState() {
@@ -648,6 +856,7 @@ class _InputBarState extends State<_InputBar> {
 
   @override
   void dispose() {
+    _typingDebounce?.cancel();
     widget.controller.removeListener(_onChanged);
     super.dispose();
   }
@@ -655,6 +864,23 @@ class _InputBarState extends State<_InputBar> {
   void _onChanged() {
     final has = widget.controller.text.trim().isNotEmpty;
     if (has != _hasText) setState(() => _hasText = has);
+
+    if (has) {
+      widget.onTypingChanged?.call(true);
+      _typingDebounce?.cancel();
+      _typingDebounce = Timer(const Duration(milliseconds: 2500), () {
+        widget.onTypingChanged?.call(false);
+      });
+    } else {
+      _typingDebounce?.cancel();
+      widget.onTypingChanged?.call(false);
+    }
+  }
+
+  void _handleSend() {
+    _typingDebounce?.cancel();
+    widget.onTypingChanged?.call(false);
+    widget.onSend();
   }
 
   @override
@@ -674,7 +900,7 @@ class _InputBarState extends State<_InputBar> {
                 minLines: 1,
                 maxLines: 5,
                 textInputAction: TextInputAction.send,
-                onSubmitted: (_) => widget.onSend(),
+                onSubmitted: (_) => _handleSend(),
                 decoration: InputDecoration(
                   hintText: widget.outOfBeads
                       ? 'Out of beads…'
@@ -701,7 +927,7 @@ class _InputBarState extends State<_InputBar> {
               duration: Motion.standard,
               curve: Motion.springCurve,
               child: IconButton.filled(
-                onPressed: canType && _hasText ? widget.onSend : null,
+                onPressed: canType && _hasText ? _handleSend : null,
                 icon: const RtIcon(type: RtIconType.send),
                 color: theme.colorScheme.onPrimary,
               ),

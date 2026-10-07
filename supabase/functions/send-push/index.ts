@@ -5,7 +5,7 @@
 // POST { conversation_id, content }
 // Requires Bearer JWT in Authorization header.
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",

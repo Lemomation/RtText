@@ -313,6 +313,10 @@ class ConversationsService {
   Future<void> delete(String conversationId) =>
       _client.from('conversations').delete().eq('id', conversationId);
 
+  /// Deletes a single message from the database.
+  Future<void> deleteMessage(String messageId) =>
+      _client.from('messages').delete().eq('id', messageId);
+
   /// Bot helper reused by the chat screen for the app bar.
   Future<Bot?> botFor(String botId) async {
     final row = await _client

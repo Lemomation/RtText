@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Top-level background message handler for FCM.
@@ -97,5 +99,31 @@ class NotificationsService {
     } catch (_) {
       // Cleanup is best-effort.
     }
+  }
+
+  /// Listens for notification tap events to navigate directly to the
+  /// corresponding chat conversation.
+  static void setupNavigation(GoRouter router) {
+    if (!_initialized) return;
+
+    // 1. App brought to foreground from background by tapping notification
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      final conversationId = message.data['conversation_id'] as String?;
+      if (conversationId != null && conversationId.isNotEmpty) {
+        router.push('/chat/$conversationId');
+      }
+    });
+
+    // 2. App launched from terminated state by tapping notification
+    FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
+      if (message != null) {
+        final conversationId = message.data['conversation_id'] as String?;
+        if (conversationId != null && conversationId.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            router.push('/chat/$conversationId');
+          });
+        }
+      }
+    });
   }
 }

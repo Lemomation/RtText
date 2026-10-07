@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:rttext/services/notifications_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -23,4 +24,11 @@ void main() {
     final client = _FakeSupabaseClient();
     await expectLater(NotificationsService.removeToken(client), completes);
   });
+
+  test('setupNavigation exits gracefully when Firebase is not initialized', () {
+    // Must not throw when called with a router before Firebase initialization
+    expect(() => NotificationsService.setupNavigation(_FakeGoRouter()), returnsNormally);
+  });
 }
+
+class _FakeGoRouter extends Fake implements GoRouter {}

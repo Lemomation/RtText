@@ -23,10 +23,13 @@ Future<void> main() async {
   final theme = ThemeProvider();
   await theme.load();
 
+  final router = AppRouter.build(auth);
+  NotificationsService.setupNavigation(router);
+
   runApp(
     ChangeNotifierProvider.value(
       value: auth,
-      child: RtTextApp(router: AppRouter.build(auth), themeProvider: theme),
+      child: RtTextApp(router: router, themeProvider: theme),
     ),
   );
 }

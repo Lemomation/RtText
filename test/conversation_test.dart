@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rttext/models/conversation.dart';
+import 'package:rttext/models/message.dart';
 
 void main() {
   group('Conversation.peerIdFor', () {
@@ -45,6 +46,36 @@ void main() {
       expect(conv.isDm, isTrue);
       expect(conv.dmUserId, 'anikait');
       expect(conv.toMap()['dm_user_id'], 'anikait');
+    });
+  });
+
+  group('Message model', () {
+    test('attributes isMine correctly', () {
+      const m1 = Message(
+        id: 'm1',
+        conversationId: 'c1',
+        role: 'user',
+        content: 'hello',
+        senderId: 'user-a',
+      );
+      expect(m1.isMine('user-a'), isTrue);
+      expect(m1.isMine('user-b'), isFalse);
+    });
+
+    test('preserves pending and createdAt', () {
+      final now = DateTime.now();
+      final m = Message(
+        id: 'm2',
+        conversationId: 'c1',
+        role: 'user',
+        content: 'pending msg',
+        createdAt: now,
+        pending: true,
+      );
+      expect(m.pending, isTrue);
+      expect(m.createdAt, now);
+      final confirmed = m.copyWith(pending: false);
+      expect(confirmed.pending, isFalse);
     });
   });
 }
