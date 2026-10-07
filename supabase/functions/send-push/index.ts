@@ -243,6 +243,10 @@ Deno.serve(async (req: Request) => {
               priority: "high",
               notification: {
                 channel_id: "rttext_messages",
+                sound: "default",
+                default_sound: true,
+                default_vibrate_timings: true,
+                notification_priority: "PRIORITY_HIGH",
                 click_action: "FLUTTER_NOTIFICATION_CLICK",
               },
             },

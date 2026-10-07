@@ -82,13 +82,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('RtText'),
-        actions: [
-          IconButton(
-            icon: const RtIcon(type: RtIconType.person),
-            tooltip: 'Profile',
-            onPressed: () => context.push('/profile'),
-          ),
-        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/create-bot'),

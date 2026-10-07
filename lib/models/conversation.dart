@@ -67,6 +67,7 @@ class Conversation {
   }
 
   Conversation copyWith({
+    DateTime? lastMessageAt,
     String? botName,
     String? botPfpUrl,
     String? peerName,
@@ -81,7 +82,7 @@ class Conversation {
         userId: userId,
         botId: botId,
         dmUserId: dmUserId,
-        lastMessageAt: lastMessageAt,
+        lastMessageAt: lastMessageAt ?? this.lastMessageAt,
         createdAt: createdAt,
         userLastReadAt: userLastReadAt ?? this.userLastReadAt,
         dmUserLastReadAt: dmUserLastReadAt ?? this.dmUserLastReadAt,

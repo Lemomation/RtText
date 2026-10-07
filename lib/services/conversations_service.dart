@@ -115,9 +115,10 @@ class ConversationsService {
       }
     }
 
-    // Last message preview and unread count per conversation.
+    // Last message preview, timestamp, and unread count per conversation.
     final previews = <String, String>{};
     final unreadCounts = <String, int>{};
+    final lastMessageAts = <String, DateTime>{};
     for (final c in convs) {
       try {
         final last = await _client
@@ -129,6 +130,12 @@ class ConversationsService {
         if (last.isNotEmpty) {
           final m = last.first;
           final content = (m['content'] as String?) ?? '';
+          final lastCreatedAt = m['created_at'] != null
+              ? DateTime.tryParse(m['created_at'] as String)
+              : null;
+          if (lastCreatedAt != null) {
+            lastMessageAts[c.id] = lastCreatedAt;
+          }
           // Bot chats: role distinguishes the sides. DM chats: both sides are
           // 'user', so attribute via sender_id instead.
           final mine = c.isDm
@@ -137,16 +144,13 @@ class ConversationsService {
           previews[c.id] = mine ? 'You: $content' : content;
 
           final myLastRead = c.lastReadAtFor(_uid ?? '');
-          if (!mine && myLastRead != null) {
-            final lastCreatedAt = m['created_at'] != null
-                ? DateTime.tryParse(m['created_at'] as String)
-                : null;
-            if (lastCreatedAt != null && lastCreatedAt.isAfter(myLastRead)) {
+          if (!mine && myLastRead != null && lastCreatedAt != null) {
+            if (lastCreatedAt.isAfter(myLastRead)) {
               final unreadRows = await _client
                   .from('messages')
                   .select('id')
                   .eq('conversation_id', c.id)
-                  .gt('created_at', myLastRead.toIso8601String());
+                  .gt('created_at', myLastRead.toUtc().toIso8601String());
               unreadCounts[c.id] = (unreadRows as List).length;
             }
           }
@@ -155,6 +159,7 @@ class ConversationsService {
     }
     return convs
         .map((c) => c.copyWith(
+              lastMessageAt: lastMessageAts[c.id] ?? c.lastMessageAt,
               lastMessagePreview: previews[c.id],
               unreadCount: unreadCounts[c.id] ?? 0,
             ))
@@ -184,7 +189,7 @@ class ConversationsService {
           isCreator ? 'user_last_read_at' : 'dm_user_last_read_at';
       await _client
           .from('conversations')
-          .update({columnToUpdate: DateTime.now().toIso8601String()})
+          .update({columnToUpdate: DateTime.now().toUtc().toIso8601String()})
           .eq('id', conversationId);
     } catch (_) {
       // Best-effort
@@ -302,7 +307,7 @@ class ConversationsService {
     }).select().single();
     await _client
         .from('conversations')
-        .update({'last_message_at': DateTime.now().toIso8601String()})
+        .update({'last_message_at': DateTime.now().toUtc().toIso8601String()})
         .eq('id', conversationId);
 
     if (senderIdToWrite != null) {

@@ -42,6 +42,11 @@ abstract final class AppRouter {
                 pageBuilder: (context, state) =>
                     Motion.page(state: state, child: const DiscoverScreen()),
               ),
+              GoRoute(
+                path: '/profile',
+                pageBuilder: (context, state) =>
+                    Motion.page(state: state, child: const ProfileScreen()),
+              ),
             ],
           ),
           GoRoute(
@@ -69,11 +74,6 @@ abstract final class AppRouter {
                 botId: state.uri.queryParameters['id'],
               ),
             ),
-          ),
-          GoRoute(
-            path: '/profile',
-            pageBuilder: (context, state) =>
-                Motion.page(state: state, child: const ProfileScreen()),
           ),
         ],
       );

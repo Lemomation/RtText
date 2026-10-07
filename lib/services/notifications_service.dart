@@ -71,7 +71,7 @@ class NotificationsService {
           'user_id': uid,
           'token': token,
           'platform': 'android',
-          'updated_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         },
         onConflict: 'user_id,token',
       );

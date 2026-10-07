@@ -79,6 +79,13 @@ void main() {
       expect(conv.createdAt, isNull);
       expect(conv.isDm, isTrue);
     });
+
+    test('supports copying with lastMessageAt', () {
+      const conv = Conversation(id: 'c1', userId: 'u1', botId: 'b1');
+      final now = DateTime.now();
+      final updated = conv.copyWith(lastMessageAt: now);
+      expect(updated.lastMessageAt, now);
+    });
   });
 
   group('Message model', () {

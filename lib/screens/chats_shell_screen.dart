@@ -107,8 +107,11 @@ class _ChatsShellScreenState extends State<ChatsShellScreen> {
     }
   }
 
-  int _indexFor(String location) =>
-      location.startsWith('/discover') ? 1 : 0;
+  int _indexFor(String location) {
+    if (location.startsWith('/discover')) return 1;
+    if (location.startsWith('/profile')) return 2;
+    return 0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -123,8 +126,16 @@ class _ChatsShellScreenState extends State<ChatsShellScreen> {
       body: widget.child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
-        onDestinationSelected: (i) =>
-            i == 0 ? context.go('/chats') : context.go('/discover'),
+        onDestinationSelected: (i) {
+          switch (i) {
+            case 0:
+              context.go('/chats');
+            case 1:
+              context.go('/discover');
+            case 2:
+              context.go('/profile');
+          }
+        },
         destinations: [
           NavigationDestination(
             icon: RtIcon(type: RtIconType.chatBubble, color: unselected),
@@ -141,6 +152,14 @@ class _ChatsShellScreenState extends State<ChatsShellScreen> {
               color: scheme.primary,
             ),
             label: 'Discover',
+          ),
+          NavigationDestination(
+            icon: RtIcon(type: RtIconType.person, color: unselected),
+            selectedIcon: RtIcon(
+              type: RtIconType.person,
+              color: scheme.primary,
+            ),
+            label: 'Profile',
           ),
         ],
       ),
