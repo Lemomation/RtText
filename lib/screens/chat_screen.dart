@@ -50,6 +50,10 @@ class _ChatScreenState extends State<ChatScreen> {
   /// 402 from the edge function is the fallback enforcement).
   int? _beads;
 
+  /// Last seen keyboard inset; when it grows, the list re-scrolls so the
+  /// newest message is never hidden behind the keyboard.
+  double _lastKeyboardInset = 0;
+
   @override
   void initState() {
     super.initState();
@@ -250,6 +254,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    if (keyboardInset > _lastKeyboardInset + 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
+    _lastKeyboardInset = keyboardInset;
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,

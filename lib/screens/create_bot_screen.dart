@@ -226,7 +226,8 @@ class _CreateBotScreenState extends State<CreateBotScreen> {
               : Form(
                   key: _formKey,
                   child: ListView(
-                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                    padding: EdgeInsets.fromLTRB(24, 16, 24,
+                        32 + MediaQuery.of(context).viewInsets.bottom),
                     children: [
                       Center(
                         child: PressableScale(

@@ -17,10 +17,12 @@ class ConversationsService {
   Stream<List<Conversation>> watchConversations() {
     final uid = _uid;
     if (uid == null) return const Stream.empty();
+    // Both DM participants must see the conversation, not just whoever
+    // initiated it (the initiator is user_id; the other side is dm_user_id).
     return _client
         .from('conversations')
         .stream(primaryKey: ['id'])
-        .eq('user_id', uid)
+        .or('user_id.eq.$uid,dm_user_id.eq.$uid')
         .asyncMap(_enrich);
   }
 
@@ -30,7 +32,7 @@ class ConversationsService {
     final rows = await _client
         .from('conversations')
         .select()
-        .eq('user_id', uid)
+        .or('user_id.eq.$uid,dm_user_id.eq.$uid')
         .order('last_message_at', ascending: false);
     return _enrich((rows as List).cast<Map<String, dynamic>>());
   }

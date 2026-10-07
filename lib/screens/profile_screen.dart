@@ -414,8 +414,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : ListView(
                   // Bottom padding includes the system-nav inset so the
                   // sign-out button clears the on-screen navigation bar.
-                  padding: EdgeInsets.fromLTRB(24, 16, 24,
-                      16 + MediaQuery.of(context).padding.bottom),
+                  padding: EdgeInsets.fromLTRB(
+                      24,
+                      16,
+                      24,
+                      16 +
+                          MediaQuery.of(context).padding.bottom +
+                          MediaQuery.of(context).viewInsets.bottom),
                   children: [
                     Center(
                       child: PressableScale(
