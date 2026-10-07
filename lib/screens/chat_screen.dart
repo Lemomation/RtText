@@ -53,6 +53,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _peerTyping = false;
   Timer? _peerTypingTimer;
 
+  DateTime? _peerLastReadAt;
+  StreamSubscription<Conversation?>? _conversationSub;
+
   /// Caller's bead balance; null = unknown (sending stays allowed and the
   /// 402 from the edge function is the fallback enforcement).
   int? _beads;
@@ -65,7 +68,22 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _service = ConversationsService(Supabase.instance.client);
+    _service.markAsRead(widget.chatId);
     _loadConversation();
+    _listenToConversation();
+  }
+
+  void _listenToConversation() {
+    _conversationSub =
+        _service.watchConversation(widget.chatId).listen((conv) {
+      if (!mounted || conv == null) return;
+      final myUid = _myUid ?? Supabase.instance.client.auth.currentUser?.id;
+      if (myUid == null) return;
+      final peerReadAt = conv.peerLastReadAtFor(myUid);
+      if (peerReadAt != _peerLastReadAt) {
+        setState(() => _peerLastReadAt = peerReadAt);
+      }
+    });
   }
 
   Future<void> _loadBalance() async {
@@ -81,9 +99,18 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final conv = await Supabase.instance.client
           .from('conversations')
-          .select('bot_id,dm_user_id,user_id')
+          .select('bot_id,dm_user_id,user_id,user_last_read_at,dm_user_last_read_at')
           .eq('id', widget.chatId)
           .maybeSingle();
+      if (conv != null) {
+        final parsed = Conversation.fromMap(conv);
+        final myUid = Supabase.instance.client.auth.currentUser?.id;
+        if (myUid != null && mounted) {
+          setState(() {
+            _peerLastReadAt = parsed.peerLastReadAtFor(myUid);
+          });
+        }
+      }
       final dmUserId = conv?['dm_user_id'] as String?;
       if (dmUserId != null) {
         // Human DM: free chat. Beads are never loaded here — the bead
@@ -175,6 +202,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.dispose();
     _scrollController.dispose();
     _peerTypingTimer?.cancel();
+    _conversationSub?.cancel();
     final channel = _typingChannel;
     if (channel != null) {
       Supabase.instance.client.removeChannel(channel);
@@ -521,6 +549,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       botName: _isDm ? _peerName : _bot?.name,
                     );
                   }
+                  _service.markAsRead(widget.chatId);
                   _scrollToBottom();
                   return _buildList(messages, _bot?.bubbleColor);
                 }
@@ -567,6 +596,13 @@ class _ChatScreenState extends State<ChatScreen> {
       if (separator) {
         items.add(_DateSeparator(label: _dateSeparatorLabel(time)));
       }
+      final isMine = _isMine(message);
+      final isRead = isMine &&
+          (_isDm
+              ? (_peerLastReadAt != null &&
+                  message.createdAt != null &&
+                  !message.createdAt!.isAfter(_peerLastReadAt!))
+              : (i < messages.length - 1 && !message.pending));
       items.add(
         _MessageBubble(
           message: message,
@@ -574,8 +610,9 @@ class _ChatScreenState extends State<ChatScreen> {
           isDm: _isDm,
           myUserId: _myUid,
           groupedWithPrev:
-              !separator && prev != null && _isMine(prev) == _isMine(message),
-          onLongPress: () => _showMessageActions(message, _isMine(message)),
+              !separator && prev != null && _isMine(prev) == isMine,
+          isRead: isRead,
+          onLongPress: () => _showMessageActions(message, isMine),
         ),
       );
     }
@@ -639,6 +676,7 @@ class _MessageBubble extends StatelessWidget {
     this.isDm = false,
     this.myUserId,
     this.groupedWithPrev = false,
+    this.isRead = false,
     this.onLongPress,
   });
 
@@ -652,6 +690,7 @@ class _MessageBubble extends StatelessWidget {
   final bool isDm;
   final String? myUserId;
   final bool groupedWithPrev;
+  final bool isRead;
   final VoidCallback? onLongPress;
 
   @override
@@ -724,9 +763,13 @@ class _MessageBubble extends StatelessWidget {
                     Icon(
                       message.pending
                           ? Icons.access_time_rounded
-                          : Icons.check_rounded,
-                      size: 12,
-                      color: textColor.withValues(alpha: 0.75),
+                          : (isRead
+                              ? Icons.done_all_rounded
+                              : Icons.check_rounded),
+                      size: isRead ? 14 : 12,
+                      color: isRead
+                          ? const Color(0xFF53BDEB)
+                          : textColor.withValues(alpha: 0.75),
                     ),
                   ],
                 ],

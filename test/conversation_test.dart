@@ -47,6 +47,25 @@ void main() {
       expect(conv.dmUserId, 'anikait');
       expect(conv.toMap()['dm_user_id'], 'anikait');
     });
+
+    test('roundtrips read receipt timestamps', () {
+      final now = DateTime.now();
+      final map = <String, dynamic>{
+        'id': 'c3',
+        'user_id': 'user-1',
+        'bot_id': '',
+        'dm_user_id': 'user-2',
+        'user_last_read_at': now.toIso8601String(),
+        'dm_user_last_read_at': now.toIso8601String(),
+      };
+      final conv = Conversation.fromMap(map);
+      expect(conv.userLastReadAt, isNotNull);
+      expect(conv.dmUserLastReadAt, isNotNull);
+      expect(conv.lastReadAtFor('user-1'), conv.userLastReadAt);
+      expect(conv.peerLastReadAtFor('user-1'), conv.dmUserLastReadAt);
+      expect(conv.lastReadAtFor('user-2'), conv.dmUserLastReadAt);
+      expect(conv.peerLastReadAtFor('user-2'), conv.userLastReadAt);
+    });
   });
 
   group('Message model', () {

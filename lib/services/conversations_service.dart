@@ -115,13 +115,14 @@ class ConversationsService {
       }
     }
 
-    // Last message preview per conversation (small N, one query each).
+    // Last message preview and unread count per conversation.
     final previews = <String, String>{};
+    final unreadCounts = <String, int>{};
     for (final c in convs) {
       try {
         final last = await _client
             .from('messages')
-            .select('content,role,sender_id')
+            .select('content,role,sender_id,created_at')
             .eq('conversation_id', c.id)
             .order('created_at', ascending: false)
             .limit(1);
@@ -134,12 +135,60 @@ class ConversationsService {
               ? m['sender_id'] == _uid
               : m['role'] == 'user';
           previews[c.id] = mine ? 'You: $content' : content;
+
+          final myLastRead = c.lastReadAtFor(_uid ?? '');
+          if (!mine && myLastRead != null) {
+            final lastCreatedAt = m['created_at'] != null
+                ? DateTime.tryParse(m['created_at'] as String)
+                : null;
+            if (lastCreatedAt != null && lastCreatedAt.isAfter(myLastRead)) {
+              final unreadRows = await _client
+                  .from('messages')
+                  .select('id')
+                  .eq('conversation_id', c.id)
+                  .gt('created_at', myLastRead.toIso8601String());
+              unreadCounts[c.id] = (unreadRows as List).length;
+            }
+          }
         }
       } catch (_) {}
     }
     return convs
-        .map((c) => c.copyWith(lastMessagePreview: previews[c.id]))
+        .map((c) => c.copyWith(
+              lastMessagePreview: previews[c.id],
+              unreadCount: unreadCounts[c.id] ?? 0,
+            ))
         .toList();
+  }
+
+  /// Stream of a single conversation's state (for real-time read receipts).
+  Stream<Conversation?> watchConversation(String conversationId) => _client
+      .from('conversations')
+      .stream(primaryKey: ['id'])
+      .eq('id', conversationId)
+      .map((rows) => rows.isEmpty ? null : Conversation.fromMap(rows.first));
+
+  /// Marks a conversation as read up to current time for the authenticated user.
+  Future<void> markAsRead(String conversationId) async {
+    final uid = _uid;
+    if (uid == null) return;
+    try {
+      final conv = await _client
+          .from('conversations')
+          .select('user_id,dm_user_id')
+          .eq('id', conversationId)
+          .maybeSingle();
+      if (conv == null) return;
+      final isCreator = conv['user_id'] == uid;
+      final columnToUpdate =
+          isCreator ? 'user_last_read_at' : 'dm_user_last_read_at';
+      await _client
+          .from('conversations')
+          .update({columnToUpdate: DateTime.now().toIso8601String()})
+          .eq('id', conversationId);
+    } catch (_) {
+      // Best-effort
+    }
   }
 
   /// Realtime stream of messages in a conversation, oldest first.

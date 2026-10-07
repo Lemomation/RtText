@@ -192,6 +192,7 @@ class _ChatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasUnread = conversation.unreadCount > 0;
     return PressableScale(
       onTap: onTap,
       child: ListTile(
@@ -212,39 +213,62 @@ class _ChatTile extends StatelessWidget {
               : (conversation.botName ?? 'Unknown bot'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleSmall,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: hasUnread ? FontWeight.bold : FontWeight.w600,
+          ),
         ),
         subtitle: Text(
           conversation.lastMessagePreview ?? 'Start the conversation',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+            color: hasUnread
+                ? theme.colorScheme.onSurface
+                : theme.colorScheme.onSurfaceVariant,
+            fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
               timeLabel,
               style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: hasUnread
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+                fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.chevron_right_rounded,
-              size: 18,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-            )
-                .animate(delay: Motion.stagger(index))
-                .fade(duration: Motion.standard)
-                .slideX(
-                  begin: -0.6,
-                  end: 0,
-                  duration: Motion.emphasized,
-                  curve: Motion.emphasizedCurve,
+            const SizedBox(height: 4),
+            if (hasUnread)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6.5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                constraints: const BoxConstraints(minWidth: 19),
+                child: Text(
+                  conversation.unreadCount > 99
+                      ? '99+'
+                      : '${conversation.unreadCount}',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 11,
+                    color: theme.colorScheme.onPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              )
+            else
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
           ],
         ),
       ),
