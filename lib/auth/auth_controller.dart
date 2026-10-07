@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:rttext/core/supabase_config.dart';
+import 'package:rttext/services/notifications_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Listens to Supabase auth state and exposes it to the router/widgets.
@@ -26,6 +27,9 @@ class AuthController extends ChangeNotifier {
     _session = _client.auth.currentSession;
     _client.auth.onAuthStateChange.listen((data) {
       _session = data.session;
+      if (data.session != null) {
+        NotificationsService.syncToken(_client);
+      }
       notifyListeners();
     });
   }
@@ -37,5 +41,8 @@ class AuthController extends ChangeNotifier {
     );
   }
 
-  Future<void> signOut() => _client.auth.signOut();
+  Future<void> signOut() async {
+    await NotificationsService.removeToken(_client);
+    await _client.auth.signOut();
+  }
 }

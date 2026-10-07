@@ -255,6 +255,23 @@ class ConversationsService {
         .from('conversations')
         .update({'last_message_at': DateTime.now().toIso8601String()})
         .eq('id', conversationId);
+
+    if (senderIdToWrite != null) {
+      // Human DM: asynchronously dispatch push notification via Edge Function.
+      // Explicit Authorization header passed in case client headers differ.
+      final token = _client.auth.currentSession?.accessToken;
+      _client.functions.invoke(
+        'send-push',
+        headers: {
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: {
+          'conversation_id': conversationId,
+          'content': content,
+        },
+      ).ignore();
+    }
+
     return Message.fromMap(row);
   }
 
