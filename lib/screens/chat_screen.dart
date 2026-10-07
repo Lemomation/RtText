@@ -1,4 +1,3 @@
-import 'dart:ui' as ui show TextDirection;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
