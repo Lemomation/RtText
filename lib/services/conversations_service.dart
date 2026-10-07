@@ -136,7 +136,14 @@ class ConversationsService {
       .stream(primaryKey: ['id'])
       .eq('conversation_id', conversationId)
       .map((rows) {
-    final messages = rows.map(Message.fromMap).toList()
+    // Realtime is at-least-once: reconnects can re-deliver the same row,
+    // which rendered as duplicate reply bubbles. Dedupe by primary key.
+    final seen = <String>{};
+    final uniqueRows = [
+      for (final r in rows)
+        if (seen.add(r['id'] as String)) r,
+    ];
+    final messages = uniqueRows.map(Message.fromMap).toList()
       ..sort((a, b) => (a.createdAt ?? DateTime(0))
           .compareTo(b.createdAt ?? DateTime(0)));
     return messages;
