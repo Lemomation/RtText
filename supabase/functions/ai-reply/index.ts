@@ -16,8 +16,11 @@ const CORS_HEADERS = {
 const GEMMA_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 // Google AI Studio OpenAI-compatible endpoint — switching models is a
-// one-string change (user-specified: gemma-4-31b-it).
+// one-string change.
 const GEMMA_MODEL = "gemma-4-31b-it";
+const GEMMA_FALLBACK_MODEL = "gemma-3-27b-it";
+const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_MODEL = "deepseek-chat";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -161,49 +164,87 @@ Deno.serve(async (req: Request) => {
 
   let content: string;
   try {
-    const gemmaBody = JSON.stringify({
-      model: GEMMA_MODEL,
-      messages: [
-        {
-          role: "system",
-          content:
-            bot.sys_prompt ||
-            `You are ${bot.name}, an AI character in a messaging app. Stay in character, keep replies conversational and concise.`,
-        },
-        ...chatMessages,
-      ],
-      max_tokens: 2048,
-    });
-    // Google's free tier flakes with 429/500/503 ("high demand"); retry
-    // with backoff and fall back to a second model before giving up.
-    const GEMMA_FALLBACK_MODEL = "gemma-3-27b-it";
-    const attempt = async (model: string) =>
-      fetch(GEMMA_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${GEMMA_API_KEY}`,
-        },
-        body: JSON.stringify({ ...JSON.parse(gemmaBody), model }),
-        signal: AbortSignal.timeout(30_000),
+    const messages = [
+      {
+        role: "system",
+        content:
+          bot.sys_prompt ||
+          `You are ${bot.name}, an AI character in a messaging app. Stay in character, keep replies conversational and concise.`,
+      },
+      ...chatMessages,
+    ];
+    // Provider chain, tried in order: DeepSeek (primary, user key), then the
+    // Google models. Each provider gets two attempts; 429/5xx and thrown
+    // timeouts are all retryable. Google's free tier regularly answers
+    // 500/503 "high demand", hence the chain.
+    type Provider = { model: string; url: string; key: string };
+    const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
+    const providers: Provider[] = [];
+    if (DEEPSEEK_API_KEY) {
+      providers.push({
+        model: DEEPSEEK_MODEL,
+        url: DEEPSEEK_ENDPOINT,
+        key: DEEPSEEK_API_KEY,
       });
-    let gemmaRes = await attempt(GEMMA_MODEL);
-    for (const delay of [900, 2500]) {
-      if (![429, 500, 503].includes(gemmaRes.status)) break;
-      await new Promise((r) => setTimeout(r, delay));
-      gemmaRes = await attempt(GEMMA_MODEL);
     }
-    if (![200].includes(gemmaRes.status) && [429, 500, 503].includes(gemmaRes.status)) {
-      console.error("Falling back to", GEMMA_FALLBACK_MODEL);
-      gemmaRes = await attempt(GEMMA_FALLBACK_MODEL);
+    if (GEMMA_API_KEY) {
+      providers.push(
+        { model: GEMMA_MODEL, url: GEMMA_ENDPOINT, key: GEMMA_API_KEY },
+        { model: GEMMA_FALLBACK_MODEL, url: GEMMA_ENDPOINT, key: GEMMA_API_KEY },
+      );
     }
-    if (!gemmaRes.ok) {
-      const detail = await gemmaRes.text();
-      console.error("Gemma error", gemmaRes.status, detail);
+    if (providers.length === 0) {
+      return json({ error: "No AI provider configured" }, 500);
+    }
+
+    let payload: {
+      choices?: { message?: { content?: string } }[];
+    } | null = null;
+    let lastError = "";
+    let solved = false;
+    for (const provider of providers) {
+      for (let attemptNo = 0; attemptNo < 2; attemptNo++) {
+        try {
+          const res = await fetch(provider.url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${provider.key}`,
+            },
+            body: JSON.stringify({
+              model: provider.model,
+              messages,
+              max_tokens: 2048,
+              // DeepSeek supports a hard thinking toggle; keep it off so
+              // replies stay fast and the reasoning never reaches the chat.
+              ...(provider.url === DEEPSEEK_ENDPOINT
+                ? { thinking: { type: "disabled" } }
+                : {}),
+            }),
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!res.ok) {
+            lastError = `${provider.model}: HTTP ${res.status} ${await res.text()}`;
+            console.error(lastError);
+            if (![429, 500, 502, 503].includes(res.status)) break; // non-retryable for this provider
+          } else {
+            payload = await res.json();
+            solved = true;
+            break;
+          }
+        } catch (err) {
+          lastError = `${provider.model}: ${String(err)}`;
+          console.error(lastError);
+        }
+        if (attemptNo === 0) await new Promise((r) => setTimeout(r, 900));
+      }
+      if (solved) break;
+    }
+    if (!solved || payload === null) {
+      console.error("All providers failed:", lastError);
       await refund();
       return json({ error: "AI provider error" }, 502);
     }
-    const payload = await gemmaRes.json();
     // Gemma 4 is a thinking model: strip the raw reasoning block so only
     // the actual reply reaches the chat.
     content =
