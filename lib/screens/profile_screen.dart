@@ -15,6 +15,7 @@ import 'package:rttext/models/profile.dart';
 import 'package:rttext/providers/theme_provider.dart';
 import 'package:rttext/services/bots_service.dart';
 import 'package:rttext/services/updater_service.dart';
+import 'package:rttext/widgets/app_toast.dart';
 import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/pressable_scale.dart';
@@ -99,7 +100,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       imageQuality: 85,
     );
     if (file == null || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final client = Supabase.instance.client;
       final path = 'user/$uid.jpg';
@@ -117,10 +117,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .from('profiles')
           .update({'avatar_url': url}).eq('id', uid);
       await _load();
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Avatar update failed: $e')),
-      );
+    } catch (_) {
+      showAppToast(context, 'Avatar update failed — try a different picture',
+          style: AppToastStyle.error);
     }
   }
 

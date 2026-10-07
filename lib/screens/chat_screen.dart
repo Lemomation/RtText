@@ -9,6 +9,7 @@ import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/message.dart';
 import 'package:rttext/services/beads_service.dart';
 import 'package:rttext/services/conversations_service.dart';
+import 'package:rttext/widgets/app_toast.dart';
 import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/rt_icons.dart';
@@ -175,16 +176,14 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isDm) {
       // Human DM: free — persist the message and nothing else. Never
       // requestAiReply, never beads.
-      final messenger = ScaffoldMessenger.of(context);
       try {
         await _service.sendMessage(widget.chatId, text,
             senderIdToWrite: _myUid);
         // The persisted row arrives via the realtime stream and replaces the
         // optimistic copy.
       } catch (_) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Message not sent')),
-        );
+        showAppToast(context, 'Message not sent',
+            style: AppToastStyle.error);
       }
       return;
     }
@@ -194,7 +193,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // The persisted row arrives via the realtime stream and replaces the
       // optimistic copy.
     } catch (_) {
-      // Leave the optimistic bubble in place; the AI retry snackbar below
+      // Leave the optimistic bubble in place; the AI retry toast below
       // still lets the user retry generation.
     }
 
@@ -217,31 +216,22 @@ class _ChatScreenState extends State<ChatScreen> {
         _awaitingReply = false;
         _beads = 0;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              BeadIcon(size: 20),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text('You\u2019re out of beads — claim 20 free ones '
-                    'tomorrow to keep chatting'),
-              ),
-            ],
-          ),
-        ),
+      showAppToast(
+        context,
+        'You\u2019re out of beads — claim 20 free ones tomorrow to keep '
+        'chatting',
+        style: AppToastStyle.info,
+        leading: const BeadIcon(size: 24),
       );
     } catch (_) {
       if (!mounted) return;
       setState(() => _awaitingReply = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('The bot could not reply'),
-          action: SnackBarAction(
-            label: 'Retry',
-            onPressed: () => _generateReply(sentText),
-          ),
-        ),
+      showAppToast(
+        context,
+        'The bot could not reply',
+        style: AppToastStyle.error,
+        actionLabel: 'Retry',
+        onAction: () => _generateReply(sentText),
       );
     }
   }

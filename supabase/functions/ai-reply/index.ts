@@ -15,7 +15,9 @@ const CORS_HEADERS = {
 
 const GEMMA_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const GEMMA_MODEL = "gemma4:31b";
+// Google AI Studio OpenAI-compatible endpoint — switching models is a
+// one-string change (user-specified: gemma-4-31b-it).
+const GEMMA_MODEL = "gemma-4-31b-it";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -62,16 +64,27 @@ Deno.serve(async (req: Request) => {
     return json({ error: "conversation_id is required" }, 400);
   }
 
-  // Caller-scoped client: RLS ensures the user can only touch their own data.
+  // Caller-scoped client: the anon key is the API key and the caller's JWT
+  // rides in Authorization (the canonical pattern — modern Supabase auth
+  // rejects a user JWT used as the apikey). RLS scopes data to the caller.
+  const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
   const { createClient } = await import(
     "https://esm.sh/@supabase/supabase-js@2"
   );
-  const userClient = createClient(SUPABASE_URL, userToken, {
-    global: { headers: { Authorization: authHeader } },
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, {
+    global: {
+      headers: { Authorization: authHeader, apikey: ANON_KEY },
+    },
   });
 
   const { data: authData, error: authError } = await userClient.auth.getUser();
   if (authError || !authData?.user) {
+    console.error(
+      "auth.getUser failed:",
+      authError?.message,
+      "| authHeader present:",
+      authHeader.length > 7,
+    );
     return json({ error: "Invalid token" }, 401);
   }
 
@@ -131,29 +144,56 @@ Deno.serve(async (req: Request) => {
       role: m.role === "assistant" ? "assistant" : "user",
       content: m.content,
     }));
+  // The model needs the conversation to END on a user turn: Gemma 4 emits
+  // zero tokens when the last message is its own (which is exactly the
+  // app's retry path). Trim trailing assistant turns so we regenerate
+  // against the latest user message, and never send a system-only request
+  // (the compat layer maps that to zero contents).
+  while (
+    chatMessages.length > 0 &&
+    chatMessages[chatMessages.length - 1].role === "assistant"
+  ) {
+    chatMessages.pop();
+  }
+  if (chatMessages.length === 0) {
+    chatMessages.push({ role: "user", content: "Hi!" });
+  }
 
   let content: string;
   try {
-    const gemmaRes = await fetch(GEMMA_ENDPOINT, {
+    const gemmaBody = JSON.stringify({
+      model: GEMMA_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            bot.sys_prompt ||
+            `You are ${bot.name}, an AI character in a messaging app. Stay in character, keep replies conversational and concise.`,
+        },
+        ...chatMessages,
+      ],
+      max_tokens: 2048,
+    });
+    // Google occasionally answers transient 500/503; one retry smooths it.
+    let gemmaRes = await fetch(GEMMA_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${GEMMA_API_KEY}`,
       },
-      body: JSON.stringify({
-        model: GEMMA_MODEL,
-        messages: [
-          {
-            role: "system",
-            content:
-              bot.sys_prompt ||
-              `You are ${bot.name}, an AI character in a messaging app. Stay in character, keep replies conversational and concise.`,
-          },
-          ...chatMessages,
-        ],
-        max_tokens: 512,
-      }),
+      body: gemmaBody,
     });
+    if ([500, 503, 429].includes(gemmaRes.status)) {
+      await new Promise((r) => setTimeout(r, 900));
+      gemmaRes = await fetch(GEMMA_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${GEMMA_API_KEY}`,
+        },
+        body: gemmaBody,
+      });
+    }
     if (!gemmaRes.ok) {
       const detail = await gemmaRes.text();
       console.error("Gemma error", gemmaRes.status, detail);
@@ -161,9 +201,12 @@ Deno.serve(async (req: Request) => {
       return json({ error: "AI provider error" }, 502);
     }
     const payload = await gemmaRes.json();
+    // Gemma 4 is a thinking model: strip the raw reasoning block so only
+    // the actual reply reaches the chat.
     content =
-      payload?.choices?.[0]?.message?.content?.trim() ||
-      "..." ;
+      (payload?.choices?.[0]?.message?.content as string | undefined)
+        ?.replace(/<(thought|think)>[\s\S]*?<\/\1>/gi, "")
+        .trim() || "";
     if (!content) {
       await refund();
       return json({ error: "Empty AI response" }, 502);
