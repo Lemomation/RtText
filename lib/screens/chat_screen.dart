@@ -89,10 +89,9 @@ class _ChatScreenState extends State<ChatScreen> {
       } else if (init.botName != null) {
         _bot = Bot(
           id: init.botId,
-          userId: init.userId,
+          ownerId: init.userId,
           name: init.botName!,
           pfpUrl: init.botPfpUrl,
-          greeting: '',
         );
       }
     }
