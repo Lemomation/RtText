@@ -411,9 +411,36 @@ class ConversationsService {
   Future<void> delete(String conversationId) =>
       _client.from('conversations').delete().eq('id', conversationId);
 
+  /// Clears all messages in a conversation without deleting the conversation row.
+  Future<void> clearConversationMessages(String conversationId) =>
+      _client.from('messages').delete().eq('conversation_id', conversationId);
+
   /// Deletes a single message from the database.
   Future<void> deleteMessage(String messageId) =>
       _client.from('messages').delete().eq('id', messageId);
+
+  /// Fetches public profile details of a DM peer from the people view.
+  Future<Map<String, dynamic>?> getPeerProfile(String peerId) async {
+    final row = await _client
+        .from('people')
+        .select('id,username,avatar_url,created_at')
+        .eq('id', peerId)
+        .maybeSingle();
+    return row;
+  }
+
+  /// Loads media attachments shared in a conversation.
+  Future<List<Map<String, dynamic>>> getSharedMedia(
+      String conversationId) async {
+    final rows = await _client
+        .from('messages')
+        .select('id,media_url,content,created_at')
+        .eq('conversation_id', conversationId)
+        .not('media_url', 'is', null)
+        .order('created_at', ascending: false)
+        .limit(100);
+    return (rows as List).cast<Map<String, dynamic>>();
+  }
 
   /// Bot helper reused by the chat screen for the app bar.
   Future<Bot?> botFor(String botId) async {

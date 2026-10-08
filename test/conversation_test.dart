@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rttext/models/conversation.dart';
 import 'package:rttext/models/message.dart';
+import 'package:rttext/models/profile.dart';
 
 void main() {
   group('Conversation.peerIdFor', () {
@@ -159,6 +160,26 @@ void main() {
       expect(updated.replyToId, 'm0');
       expect(updated.replyToContent, 'prior text');
       expect(updated.replyToSender, 'someone');
+    });
+  });
+
+  group('Profile serialization', () {
+    test('roundtrips created_at in fromMap / toMap', () {
+      final now = DateTime.now();
+      final map = <String, dynamic>{
+        'id': 'u1',
+        'username': 'bilquees',
+        'avatar_url': 'https://example.com/pfp.jpg',
+        'beads': 42,
+        'created_at': now.toIso8601String(),
+      };
+      final profile = Profile.fromMap(map);
+      expect(profile.id, 'u1');
+      expect(profile.username, 'bilquees');
+      expect(profile.avatarUrl, 'https://example.com/pfp.jpg');
+      expect(profile.beads, 42);
+      expect(profile.createdAt, isNotNull);
+      expect(profile.toMap()['created_at'], isNotNull);
     });
   });
 }

@@ -2,9 +2,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:rttext/auth/auth_controller.dart';
@@ -168,6 +170,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } finally {
       if (mounted) setState(() => _savingName = false);
+    }
+  }
+
+  void _copyUsername() {
+    final name = _profile?.username;
+    if (name != null && name.isNotEmpty) {
+      Clipboard.setData(ClipboardData(text: '@$name'));
+      showAppToast(context, 'Username copied to clipboard',
+          style: AppToastStyle.info);
     }
   }
 
@@ -553,7 +564,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     )
                         .animate(delay: 80.ms)
                         .fade(duration: Motion.emphasized),
-                    const SizedBox(height: 8),
+                    if (!_editingName &&
+                        (_profile?.username.isNotEmpty ?? false)) ...[
+                      const SizedBox(height: 6),
+                      Center(
+                        child: InkWell(
+                          onTap: _copyUsername,
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.alternate_email_rounded,
+                                  size: 14,
+                                  color: theme.colorScheme.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _profile!.username,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Icons.copy_rounded,
+                                  size: 13,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (_profile?.createdAt != null) ...[
+                      const SizedBox(height: 6),
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.calendar_today_rounded,
+                              size: 13,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Joined ${DateFormat.yMMMM().format(_profile!.createdAt!.toLocal())}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
                     Center(
                       child: Card(
                         child: Padding(

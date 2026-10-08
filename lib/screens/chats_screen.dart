@@ -23,10 +23,20 @@ class _ChatsScreenState extends State<ChatsScreen> {
   late final ConversationsService _service;
   List<Conversation>? _cached;
 
+  bool _isSearching = false;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
   @override
   void initState() {
     super.initState();
     _service = ConversationsService(Supabase.instance.client);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   String _timeLabel(DateTime? time) {
@@ -81,7 +91,40 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RtText'),
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Search chats…',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+                style: theme.textTheme.titleMedium,
+                onChanged: (val) =>
+                    setState(() => _searchQuery = val.trim().toLowerCase()),
+              )
+            : const Text('RtText'),
+        actions: [
+          IconButton(
+            icon: Icon(
+                _isSearching ? Icons.close_rounded : Icons.search_rounded),
+            tooltip: _isSearching ? 'Close search' : 'Search chats',
+            onPressed: () {
+              setState(() {
+                if (_isSearching) {
+                  _isSearching = false;
+                  _searchQuery = '';
+                  _searchController.clear();
+                } else {
+                  _isSearching = true;
+                }
+              });
+            },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/create-bot'),
@@ -131,15 +174,52 @@ class _ChatsScreenState extends State<ChatsScreen> {
               ],
             ).animate().fade(duration: 450.ms);
           }
+
+          final filtered = _searchQuery.isEmpty
+              ? conversations
+              : conversations.where((c) {
+                  final name = (c.isDm ? c.peerName : c.botName) ?? '';
+                  final preview = c.lastMessagePreview ?? '';
+                  return name.toLowerCase().contains(_searchQuery) ||
+                      preview.toLowerCase().contains(_searchQuery);
+                }).toList();
+
+          if (filtered.isEmpty && _searchQuery.isNotEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.search_off_rounded,
+                      size: 48,
+                      color: theme.colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.6),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No chats found matching "$_searchQuery"',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           return RefreshIndicator(
             onRefresh: _service.fetchConversations,
             child: ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
-              itemCount: conversations.length,
+              itemCount: filtered.length,
               separatorBuilder: (_, __) =>
                   const Divider(height: 1, indent: 76),
               itemBuilder: (context, index) {
-                final c = conversations[index];
+                final c = filtered[index];
                 return Dismissible(
                   key: ValueKey('conv-${c.id}'),
                   direction: DismissDirection.endToStart,

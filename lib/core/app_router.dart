@@ -9,6 +9,7 @@ import 'package:rttext/screens/chats_shell_screen.dart';
 import 'package:rttext/screens/discover_screen.dart';
 import 'package:rttext/screens/create_bot_screen.dart';
 import 'package:rttext/screens/login_screen.dart';
+import 'package:rttext/screens/peer_profile_screen.dart';
 import 'package:rttext/screens/profile_screen.dart';
 
 /// Central route table with an auth gate: unauthenticated users are
@@ -72,6 +73,18 @@ abstract final class AppRouter {
               state: state,
               child: CreateBotScreen(
                 botId: state.uri.queryParameters['id'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/peer-profile/:id',
+            pageBuilder: (context, state) => Motion.page(
+              state: state,
+              child: PeerProfileScreen(
+                peerId: state.pathParameters['id'] ?? '',
+                conversationId: state.uri.queryParameters['conversationId'],
+                initialName: state.uri.queryParameters['name'],
+                initialAvatarUrl: state.uri.queryParameters['avatarUrl'],
               ),
             ),
           ),

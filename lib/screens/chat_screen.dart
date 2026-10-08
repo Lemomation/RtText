@@ -55,6 +55,7 @@ class _ChatScreenState extends State<ChatScreen> {
   // only — no typing indicator, no bead balance, no ai-reply.
   bool _isDm = false;
   String? _myUid;
+  String? _peerId;
   String? _peerName;
   String? _peerAvatarUrl;
 
@@ -88,6 +89,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (init != null) {
       _isDm = init.isDm;
       if (init.isDm) {
+        _peerId = init.peerIdFor(_myUid ?? '');
         _peerName = init.peerName;
         _peerAvatarUrl = init.peerAvatarUrl;
         if (_myUid != null) {
@@ -127,6 +129,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _initTypingChannel();
         final peerId = conv.peerIdFor(myUid);
         if (peerId != null) {
+          setState(() => _peerId = peerId);
           _fetchPeerInfo(peerId);
         }
       }
@@ -189,6 +192,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _initTypingChannel();
         final peerId = parsed.peerIdFor(myUid ?? '');
         if (peerId != null) {
+          if (mounted) setState(() => _peerId = peerId);
           await _fetchPeerInfo(peerId);
         }
         return;
@@ -623,6 +627,21 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _openDetails() {
+    if (_isDm) {
+      final pid = _peerId;
+      if (pid != null) {
+        final nameParam = Uri.encodeComponent(_peerName ?? '');
+        final pfpParam = Uri.encodeComponent(_peerAvatarUrl ?? '');
+        context.push(
+          '/peer-profile/$pid?conversationId=${widget.chatId}&name=$nameParam&avatarUrl=$pfpParam',
+        );
+      }
+    } else if (_bot != null) {
+      context.push('/bot/${_bot!.id}');
+    }
+  }
+
   Future<void> _confirmDeleteMessage(Message message) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -671,78 +690,97 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: Row(
-          children: [
-            if (_isDm) ...[
-              BotAvatar(
-                name: _peerName ?? '?',
-                url: _peerAvatarUrl,
-                radius: 18,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _peerName ?? 'Chat',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+        title: InkWell(
+          onTap: _openDetails,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            child: Row(
+              children: [
+                if (_isDm) ...[
+                  BotAvatar(
+                    name: _peerName ?? '?',
+                    url: _peerAvatarUrl,
+                    radius: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _peerName ?? 'Chat',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        if (_peerTyping)
+                          Text(
+                            'typing…',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                          ),
+                      ],
                     ),
-                    if (_peerTyping)
-                      Text(
-                        'typing…',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                      ),
-                  ],
-                ),
-              ),
-            ] else ...[
-              BotAvatar(name: _bot?.name ?? '?', url: _bot?.pfpUrl, radius: 18),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _bot?.name ?? 'Chat',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ] else ...[
+                  BotAvatar(
+                      name: _bot?.name ?? '?', url: _bot?.pfpUrl, radius: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _bot?.name ?? 'Chat',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        if (_awaitingReply)
+                          Text(
+                            'typing…',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                          )
+                        else if ((_bot?.bio ?? '').isNotEmpty)
+                          Text(
+                            _bot!.bio!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                          ),
+                      ],
                     ),
-                    if (_awaitingReply)
-                      Text(
-                        'typing…',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                      )
-                    else if ((_bot?.bio ?? '').isNotEmpty)
-                      Text(
-                        _bot!.bio!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color:
-                                  Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ],
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
         actions: [
-          // DMs have no character profile to open.
-          if (!_isDm && _bot != null)
+          if (_isDm && _peerId != null)
+            IconButton(
+              icon: const Icon(Icons.info_outline_rounded),
+              tooltip: 'Contact info',
+              onPressed: _openDetails,
+            )
+          else if (!_isDm && _bot != null)
             IconButton(
               icon: const Icon(Icons.smart_toy_outlined),
               tooltip: 'Character profile',
-              onPressed: () => context.push('/bot/${_bot!.id}'),
+              onPressed: _openDetails,
             ),
         ],
       ),
