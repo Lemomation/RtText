@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:rttext/core/uuid.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/conversation.dart';
 import 'package:rttext/models/message.dart';
@@ -123,13 +126,22 @@ class ConversationsService {
       try {
         final last = await _client
             .from('messages')
-            .select('content,role,sender_id,created_at')
+            .select('content,role,sender_id,created_at,media_url')
             .eq('conversation_id', c.id)
             .order('created_at', ascending: false)
             .limit(1);
         if (last.isNotEmpty) {
           final m = last.first;
           final content = (m['content'] as String?) ?? '';
+          final mediaUrl = m['media_url'] as String?;
+          final String displayBody;
+          if (content.trim().isNotEmpty) {
+            displayBody = mediaUrl != null ? '📷 $content' : content;
+          } else if (mediaUrl != null) {
+            displayBody = '📷 Photo';
+          } else {
+            displayBody = '';
+          }
           final lastCreatedAt = m['created_at'] != null
               ? DateTime.tryParse(m['created_at'] as String)
               : null;
@@ -141,7 +153,7 @@ class ConversationsService {
           final mine = c.isDm
               ? m['sender_id'] == _uid
               : m['role'] == 'user';
-          previews[c.id] = mine ? 'You: $content' : content;
+          previews[c.id] = mine ? 'You: $displayBody' : displayBody;
 
           final myLastRead = c.lastReadAtFor(_uid ?? '');
           if (!mine && myLastRead != null && lastCreatedAt != null) {
@@ -289,6 +301,28 @@ class ConversationsService {
     return (rows as List).cast<Map<String, dynamic>>();
   }
 
+  /// Uploads an image to the `chat_media` storage bucket and returns its public URL.
+  Future<String> uploadChatImage(
+    String conversationId,
+    Uint8List bytes, {
+    String extension = 'jpg',
+  }) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+    final ext = extension.toLowerCase().replaceAll('.', '');
+    final contentType = ext == 'png' ? 'image/png' : 'image/jpeg';
+    final path = '$conversationId/${uuidV4()}.$ext';
+    await _client.storage.from('chat_media').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: true,
+            contentType: contentType,
+          ),
+        );
+    return _client.storage.from('chat_media').getPublicUrl(path);
+  }
+
   /// Inserts a user message and returns the persisted row.
   ///
   /// For DM chats pass [senderIdToWrite] (the caller's uid) so the peer's
@@ -298,12 +332,20 @@ class ConversationsService {
     String conversationId,
     String content, {
     String? senderIdToWrite,
+    String? mediaUrl,
+    String? replyToId,
+    String? replyToContent,
+    String? replyToSender,
   }) async {
     final row = await _client.from('messages').insert({
       'conversation_id': conversationId,
       'role': 'user',
       'content': content,
       if (senderIdToWrite != null) 'sender_id': senderIdToWrite,
+      if (mediaUrl != null) 'media_url': mediaUrl,
+      if (replyToId != null) 'reply_to_id': replyToId,
+      if (replyToContent != null) 'reply_to_content': replyToContent,
+      if (replyToSender != null) 'reply_to_sender': replyToSender,
     }).select().single();
     await _client
         .from('conversations')
@@ -313,6 +355,8 @@ class ConversationsService {
     if (senderIdToWrite != null) {
       // Human DM: asynchronously dispatch push notification via Edge Function.
       // Explicit Authorization header passed in case client headers differ.
+      final pushContent =
+          content.trim().isEmpty && mediaUrl != null ? '📷 Photo' : content;
       final token = _client.auth.currentSession?.accessToken;
       _client.functions.invoke(
         'send-push',
@@ -321,7 +365,7 @@ class ConversationsService {
         },
         body: {
           'conversation_id': conversationId,
-          'content': content,
+          'content': pushContent,
         },
       ).ignore();
     }

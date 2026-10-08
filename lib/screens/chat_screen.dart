@@ -1,10 +1,13 @@
 
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
@@ -15,6 +18,7 @@ import 'package:rttext/services/conversations_service.dart';
 import 'package:rttext/widgets/app_toast.dart';
 import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
+import 'package:rttext/widgets/full_screen_image_viewer.dart';
 import 'package:rttext/widgets/rt_icons.dart';
 import 'package:rttext/widgets/rt_markdown.dart';
 import 'package:rttext/widgets/typing_indicator.dart';
@@ -69,6 +73,11 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Last seen keyboard inset; when it grows, the list re-scrolls so the
   /// newest message is never hidden behind the keyboard.
   double _lastKeyboardInset = 0;
+
+  Message? _replyingTo;
+  Uint8List? _attachedBytes;
+  String? _attachedExt;
+  bool _isUploadingMedia = false;
 
   @override
   void initState() {
@@ -285,11 +294,141 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _startReply(Message message) {
+    HapticFeedback.lightImpact();
+    setState(() => _replyingTo = message);
+  }
+
+  void _cancelReply() {
+    setState(() => _replyingTo = null);
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        imageQuality: 75,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.contains('.')
+          ? picked.name.split('.').last
+          : 'jpg';
+      if (!mounted) return;
+      setState(() {
+        _attachedBytes = bytes;
+        _attachedExt = ext;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      showAppToast(context, 'Could not select photo',
+          style: AppToastStyle.error);
+    }
+  }
+
+  void _showAttachmentPicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_rounded),
+                  title: const Text('Take photo'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_rounded),
+                  title: const Text('Choose from gallery'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickImage(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _awaitingReply || _beads == 0) return;
+    final hasMedia = _attachedBytes != null;
+    if ((text.isEmpty && !hasMedia) ||
+        _awaitingReply ||
+        _beads == 0 ||
+        _isUploadingMedia) {
+      return;
+    }
     _controller.clear();
     _onTypingChanged(false);
+
+    final bytesToUpload = _attachedBytes;
+    final extToUpload = _attachedExt ?? 'jpg';
+    final replyTarget = _replyingTo;
+
+    setState(() {
+      _attachedBytes = null;
+      _attachedExt = null;
+      _replyingTo = null;
+    });
+
+    String? uploadedUrl;
+    if (bytesToUpload != null) {
+      setState(() => _isUploadingMedia = true);
+      try {
+        uploadedUrl = await _service.uploadChatImage(
+          widget.chatId,
+          bytesToUpload,
+          extension: extToUpload,
+        );
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _isUploadingMedia = false);
+        showAppToast(context, 'Failed to upload photo',
+            style: AppToastStyle.error);
+        return;
+      }
+      if (mounted) setState(() => _isUploadingMedia = false);
+    }
+
+    final replySenderName = replyTarget == null
+        ? null
+        : (_isMine(replyTarget)
+            ? 'You'
+            : (_isDm ? (_peerName ?? 'Friend') : (_bot?.name ?? 'Bot')));
+
+    final replySnippet = replyTarget == null
+        ? null
+        : (replyTarget.content.trim().isNotEmpty
+            ? replyTarget.content
+            : (replyTarget.mediaUrl != null ? '📷 Photo' : ''));
 
     final optimistic = Message(
       id: 'pending-${DateTime.now().millisecondsSinceEpoch}',
@@ -299,6 +438,10 @@ class _ChatScreenState extends State<ChatScreen> {
       // DM messages carry the sender so both sides can attribute bubbles;
       // bot chats leave it null exactly as before.
       senderId: _isDm ? _myUid : null,
+      mediaUrl: uploadedUrl,
+      replyToId: replyTarget?.id,
+      replyToContent: replySnippet,
+      replyToSender: replySenderName,
       createdAt: DateTime.now(),
       pending: true,
     );
@@ -313,8 +456,15 @@ class _ChatScreenState extends State<ChatScreen> {
       // Human DM: free — persist the message and nothing else. Never
       // requestAiReply, never beads.
       try {
-        await _service.sendMessage(widget.chatId, text,
-            senderIdToWrite: _myUid);
+        await _service.sendMessage(
+          widget.chatId,
+          text,
+          senderIdToWrite: _myUid,
+          mediaUrl: uploadedUrl,
+          replyToId: replyTarget?.id,
+          replyToContent: replySnippet,
+          replyToSender: replySenderName,
+        );
         if (mounted) {
           setState(() {
             _pending.removeWhere((p) => p.id == optimistic.id);
@@ -329,7 +479,14 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      final row = await _service.sendMessage(widget.chatId, text);
+      final row = await _service.sendMessage(
+        widget.chatId,
+        text,
+        mediaUrl: uploadedUrl,
+        replyToId: replyTarget?.id,
+        replyToContent: replySnippet,
+        replyToSender: replySenderName,
+      );
       // Drop the optimistic copy as soon as the server row exists — don't
       // wait for the realtime echo, which can lag and show the bubble twice.
       if (mounted) {
@@ -345,7 +502,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // still lets the user retry generation.
     }
 
-    await _generateReply(text);
+    await _generateReply(text.isNotEmpty ? text : '📷 [Sent a photo]');
   }
 
   Future<void> _generateReply(String sentText) async {
@@ -410,15 +567,40 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.copy_rounded),
-                  title: const Text('Copy text'),
+                  leading: const Icon(Icons.reply_rounded),
+                  title: const Text('Reply'),
                   onTap: () {
                     Navigator.pop(ctx);
-                    Clipboard.setData(ClipboardData(text: message.content));
-                    showAppToast(context, 'Copied to clipboard',
-                        style: AppToastStyle.info);
+                    _startReply(message);
                   },
                 ),
+                if (message.content.trim().isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.copy_rounded),
+                    title: const Text('Copy text'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Clipboard.setData(ClipboardData(text: message.content));
+                      showAppToast(context, 'Copied to clipboard',
+                          style: AppToastStyle.info);
+                    },
+                  ),
+                if (message.mediaUrl != null)
+                  ListTile(
+                    leading: const Icon(Icons.fullscreen_rounded),
+                    title: const Text('View full photo'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      FullScreenImageViewer.open(
+                        context,
+                        imageUrl: message.mediaUrl!,
+                        heroTag: 'msg-media-${message.id}',
+                        caption: message.content.trim().isNotEmpty
+                            ? message.content
+                            : null,
+                      );
+                    },
+                  ),
                 if ((isMine || !_isDm) && !message.pending)
                   ListTile(
                     leading: Icon(
@@ -584,6 +766,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     (p) => server.any((m) =>
                         m.isUser &&
                         m.content == p.content &&
+                        m.mediaUrl == p.mediaUrl &&
                         m.senderId == p.senderId),
                   );
                   final messages = [...server, ..._pending];
@@ -614,6 +797,22 @@ class _ChatScreenState extends State<ChatScreen> {
             controller: _controller,
             enabled: !_awaitingReply,
             outOfBeads: _beads == 0,
+            isUploading: _isUploadingMedia,
+            replyingTo: _replyingTo,
+            replySender: _replyingTo == null
+                ? null
+                : (_isMine(_replyingTo!)
+                    ? 'You'
+                    : (_isDm
+                        ? (_peerName ?? 'Friend')
+                        : (_bot?.name ?? 'Bot'))),
+            onCancelReply: _cancelReply,
+            attachedBytes: _attachedBytes,
+            onRemoveAttachment: () => setState(() {
+              _attachedBytes = null;
+              _attachedExt = null;
+            }),
+            onAttach: _showAttachmentPicker,
             onSend: _send,
             onTypingChanged: _onTypingChanged,
           ),
@@ -657,6 +856,7 @@ class _ChatScreenState extends State<ChatScreen> {
               !separator && prev != null && _isMine(prev) == isMine,
           isRead: isRead,
           onLongPress: () => _showMessageActions(message, isMine),
+          onReply: () => _startReply(message),
         ),
       );
     }
@@ -725,6 +925,7 @@ class _MessageBubble extends StatelessWidget {
     this.groupedWithPrev = false,
     this.isRead = false,
     this.onLongPress,
+    this.onReply,
   });
 
   final Message message;
@@ -739,6 +940,7 @@ class _MessageBubble extends StatelessWidget {
   final bool groupedWithPrev;
   final bool isRead;
   final VoidCallback? onLongPress;
+  final VoidCallback? onReply;
 
   @override
   Widget build(BuildContext context) {
@@ -770,6 +972,11 @@ class _MessageBubble extends StatelessWidget {
     final timeLabel =
         createdAt != null ? DateFormat.jm().format(createdAt) : '';
 
+    final hasQuote = message.replyToContent != null &&
+        message.replyToContent!.trim().isNotEmpty;
+    final hasMedia = message.mediaUrl != null;
+    final hasText = message.content.trim().isNotEmpty;
+
     final bubble = Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
@@ -781,18 +988,119 @@ class _MessageBubble extends StatelessWidget {
             top: groupedWithPrev ? 2 : 6,
             bottom: 2,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: hasMedia && !hasText && !hasQuote ? 6 : 14,
+            vertical: hasMedia && !hasText && !hasQuote ? 6 : 8,
+          ),
           constraints: const BoxConstraints(maxWidth: 320),
           decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              RtMarkdownText(
-                message.content,
-                baseStyle:
-                    theme.textTheme.bodyMedium?.copyWith(color: textColor),
-              ),
+              if (hasQuote) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isUser
+                        ? Colors.black.withValues(alpha: 0.15)
+                        : (isBubbleLight
+                            ? Colors.black.withValues(alpha: 0.08)
+                            : Colors.white.withValues(alpha: 0.12)),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border(
+                      left: BorderSide(
+                        color: isUser
+                            ? textColor.withValues(alpha: 0.8)
+                            : theme.colorScheme.primary,
+                        width: 3,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        message.replyToSender ?? 'Replying',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: isUser ? textColor : theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        message.replyToContent!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: textColor.withValues(alpha: 0.85),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (hasMedia) ...[
+                GestureDetector(
+                  onTap: () {
+                    FullScreenImageViewer.open(
+                      context,
+                      imageUrl: message.mediaUrl!,
+                      heroTag: 'msg-media-${message.id}',
+                      caption: hasText ? message.content : null,
+                    );
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: 290,
+                        maxHeight: 320,
+                      ),
+                      child: Hero(
+                        tag: 'msg-media-${message.id}',
+                        child: CachedNetworkImage(
+                          imageUrl: message.mediaUrl!,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => Container(
+                            width: 240,
+                            height: 180,
+                            color: Colors.black12,
+                            child: const Center(
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          ),
+                          errorWidget: (context, url, error) => Container(
+                            width: 240,
+                            height: 180,
+                            color: Colors.black12,
+                            child: const Center(
+                              child:
+                                  Icon(Icons.broken_image_rounded, size: 36),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (hasText) const SizedBox(height: 6),
+              ],
+              if (hasText)
+                RtMarkdownText(
+                  message.content,
+                  baseStyle:
+                      theme.textTheme.bodyMedium?.copyWith(color: textColor),
+                ),
               const SizedBox(height: 2),
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -829,7 +1137,26 @@ class _MessageBubble extends StatelessWidget {
       ),
     );
 
-    return bubble
+    final wrapped = Dismissible(
+      key: ValueKey('msg-reply-${message.id}'),
+      direction: DismissDirection.startToEnd,
+      confirmDismiss: (direction) async {
+        onReply?.call();
+        return false;
+      },
+      background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        child: Icon(
+          Icons.reply_rounded,
+          color: theme.colorScheme.primary,
+          size: 24,
+        ),
+      ),
+      child: bubble,
+    );
+
+    return wrapped
         .animate()
         .fade(duration: Motion.standard)
         .scale(
@@ -923,16 +1250,30 @@ class _InputBar extends StatefulWidget {
   const _InputBar({
     required this.controller,
     required this.onSend,
+    required this.onAttach,
     this.onTypingChanged,
     this.enabled = true,
     this.outOfBeads = false,
+    this.isUploading = false,
+    this.replyingTo,
+    this.replySender,
+    this.onCancelReply,
+    this.attachedBytes,
+    this.onRemoveAttachment,
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
+  final VoidCallback onAttach;
   final ValueChanged<bool>? onTypingChanged;
   final bool enabled;
   final bool outOfBeads;
+  final bool isUploading;
+  final Message? replyingTo;
+  final String? replySender;
+  final VoidCallback? onCancelReply;
+  final Uint8List? attachedBytes;
+  final VoidCallback? onRemoveAttachment;
 
   @override
   State<_InputBar> createState() => _InputBarState();
@@ -981,60 +1322,215 @@ class _InputBarState extends State<_InputBar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final canType = widget.enabled && !widget.outOfBeads;
+    final canSend = canType &&
+        !widget.isUploading &&
+        (_hasText || widget.attachedBytes != null);
+
     return SafeArea(
       top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: widget.controller,
-                enabled: canType,
-                minLines: 1,
-                maxLines: 5,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _handleSend(),
-                decoration: InputDecoration(
-                  hintText: widget.outOfBeads
-                      ? 'Out of beads…'
-                      : widget.enabled
-                          ? 'Message…'
-                          : 'Waiting for reply…',
-                  suffixIcon: widget.enabled && !widget.outOfBeads
-                      ? null
-                      : const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.replyingTo != null) ...[
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(12),
+                border: Border(
+                  left: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 4,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.reply_rounded,
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Replying to ${widget.replySender ?? 'Message'}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
                           ),
                         ),
-                ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.replyingTo!.content.trim().isNotEmpty
+                              ? widget.replyingTo!.content
+                              : (widget.replyingTo!.mediaUrl != null
+                                  ? '📷 Photo'
+                                  : ''),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Cancel reply',
+                    onPressed: widget.onCancelReply,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            AnimatedRotation(
-              turns: _hasText ? 0 : -0.25,
-              duration: Motion.standard,
-              curve: Motion.springCurve,
-              child: IconButton.filled(
-                onPressed: canType && _hasText ? _handleSend : null,
-                icon: const RtIcon(type: RtIconType.send),
-                color: theme.colorScheme.onPrimary,
+          ],
+          if (widget.attachedBytes != null) ...[
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(12),
               ),
-                )
-                .animate(target: _hasText ? 1 : 0)
-                .scale(
-                  begin: const Offset(0.85, 0.85),
-                  end: const Offset(1, 1),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      widget.attachedBytes!,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Photo attached',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Add an optional caption below',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Remove photo',
+                    onPressed: widget.onRemoveAttachment,
+                  ),
+                ],
+              ),
+            ),
+          ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  tooltip: 'Attach photo',
+                  color: theme.colorScheme.onSurfaceVariant,
+                  onPressed: canType && !widget.isUploading
+                      ? widget.onAttach
+                      : null,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: TextField(
+                    controller: widget.controller,
+                    enabled: canType && !widget.isUploading,
+                    minLines: 1,
+                    maxLines: 5,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _handleSend(),
+                    decoration: InputDecoration(
+                      hintText: widget.outOfBeads
+                          ? 'Out of beads…'
+                          : widget.isUploading
+                              ? 'Uploading photo…'
+                              : widget.enabled
+                                  ? (widget.attachedBytes != null
+                                      ? 'Add a caption…'
+                                      : 'Message…')
+                                  : 'Waiting for reply…',
+                      suffixIcon: widget.isUploading
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            )
+                          : (widget.enabled && !widget.outOfBeads
+                              ? null
+                              : const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                )),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AnimatedRotation(
+                  turns: canSend ? 0 : -0.25,
                   duration: Motion.standard,
                   curve: Motion.springCurve,
-                ),
-          ],
-        ),
+                  child: IconButton.filled(
+                    onPressed: canSend ? _handleSend : null,
+                    icon: widget.isUploading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const RtIcon(type: RtIconType.send),
+                    color: theme.colorScheme.onPrimary,
+                  ),
+                )
+                    .animate(target: canSend ? 1 : 0)
+                    .scale(
+                      begin: const Offset(0.85, 0.85),
+                      end: const Offset(1, 1),
+                      duration: Motion.standard,
+                      curve: Motion.springCurve,
+                    ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

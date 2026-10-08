@@ -116,5 +116,49 @@ void main() {
       final confirmed = m.copyWith(pending: false);
       expect(confirmed.pending, isFalse);
     });
+
+    test('roundtrips mediaUrl and reply fields in fromMap / toMap', () {
+      final map = <String, dynamic>{
+        'id': 'm3',
+        'conversation_id': 'c1',
+        'role': 'user',
+        'content': 'look at this',
+        'sender_id': 'user-a',
+        'media_url': 'https://example.com/photo.jpg',
+        'reply_to_id': 'm1',
+        'reply_to_content': 'hello',
+        'reply_to_sender': 'user-b',
+      };
+      final m = Message.fromMap(map);
+      expect(m.mediaUrl, 'https://example.com/photo.jpg');
+      expect(m.replyToId, 'm1');
+      expect(m.replyToContent, 'hello');
+      expect(m.replyToSender, 'user-b');
+
+      final serialized = m.toMap();
+      expect(serialized['media_url'], 'https://example.com/photo.jpg');
+      expect(serialized['reply_to_id'], 'm1');
+      expect(serialized['reply_to_content'], 'hello');
+      expect(serialized['reply_to_sender'], 'user-b');
+    });
+
+    test('supports copyWith with mediaUrl and reply fields', () {
+      const m = Message(
+        id: 'm1',
+        conversationId: 'c1',
+        role: 'user',
+        content: 'hello',
+      );
+      final updated = m.copyWith(
+        mediaUrl: 'https://example.com/img.png',
+        replyToId: 'm0',
+        replyToContent: 'prior text',
+        replyToSender: 'someone',
+      );
+      expect(updated.mediaUrl, 'https://example.com/img.png');
+      expect(updated.replyToId, 'm0');
+      expect(updated.replyToContent, 'prior text');
+      expect(updated.replyToSender, 'someone');
+    });
   });
 }
