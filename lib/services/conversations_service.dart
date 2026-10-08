@@ -523,7 +523,7 @@ class ConversationsService {
   Future<Map<String, dynamic>?> getPeerProfile(String peerId) async {
     final row = await _client
         .from('people')
-        .select('id,username,avatar_url,created_at')
+        .select('id,username,avatar_url,created_at,last_seen_at')
         .eq('id', peerId)
         .maybeSingle();
     return row;

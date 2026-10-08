@@ -15,6 +15,7 @@ import 'package:rttext/models/conversation_member.dart';
 import 'package:rttext/models/message.dart';
 import 'package:rttext/services/beads_service.dart';
 import 'package:rttext/services/conversations_service.dart';
+import 'package:rttext/services/presence_service.dart';
 import 'package:rttext/widgets/app_toast.dart';
 import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
@@ -72,6 +73,11 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _peerTyping = false;
   Timer? _peerTypingTimer;
 
+  RealtimeChannel? _peerPresenceChannel;
+  bool _peerOnline = false;
+  DateTime? _peerLastSeen;
+  Timer? _lastSeenRefreshTimer;
+
   DateTime? _peerLastReadAt;
   StreamSubscription<Conversation?>? _conversationSub;
 
@@ -113,6 +119,10 @@ class _ChatScreenState extends State<ChatScreen> {
           _peerLastReadAt = init.peerLastReadAtFor(_myUid!);
         }
         _initTypingChannel();
+        if (_peerId != null) {
+          _initPeerPresence(_peerId!);
+          _fetchPeerInfo(_peerId!);
+        }
       } else if (init.botName != null) {
         _bot = Bot(
           id: init.botId,
@@ -147,6 +157,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final peerId = conv.peerIdFor(myUid);
         if (peerId != null) {
           setState(() => _peerId = peerId);
+          _initPeerPresence(peerId);
           _fetchPeerInfo(peerId);
         }
       }
@@ -157,13 +168,20 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final peer = await Supabase.instance.client
           .from('people')
-          .select('username,avatar_url')
+          .select('username,avatar_url,last_seen_at')
           .eq('id', peerId)
           .maybeSingle();
       if (mounted && peer != null) {
+        DateTime? lastSeen;
+        if (peer['last_seen_at'] != null) {
+          lastSeen = DateTime.tryParse(peer['last_seen_at'] as String);
+        }
         setState(() {
           _peerName = peer['username'] as String?;
           _peerAvatarUrl = peer['avatar_url'] as String?;
+          if (lastSeen != null) {
+            _peerLastSeen = lastSeen;
+          }
         });
       }
     } catch (_) {}
@@ -225,6 +243,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final peerId = parsed.peerIdFor(myUid ?? '');
         if (peerId != null) {
           if (mounted) setState(() => _peerId = peerId);
+          _initPeerPresence(peerId);
           await _fetchPeerInfo(peerId);
         }
         return;
@@ -343,16 +362,46 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _initPeerPresence(String peerId) {
+    if (_peerPresenceChannel != null) return;
+    _peerPresenceChannel =
+        PresenceService.instance.createPeerPresenceSubscription(
+      peerId: peerId,
+      onStatusChange: (isOnline) {
+        if (!mounted) return;
+        setState(() {
+          if (_peerOnline && !isOnline) {
+            _peerLastSeen = DateTime.now();
+          }
+          _peerOnline = isOnline;
+        });
+      },
+    );
+
+    _lastSeenRefreshTimer?.cancel();
+    _lastSeenRefreshTimer =
+        Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && !_peerOnline && _peerLastSeen != null) {
+        setState(() {});
+      }
+    });
+  }
+
   @override
   void dispose() {
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _scrollController.dispose();
     _peerTypingTimer?.cancel();
+    _lastSeenRefreshTimer?.cancel();
     _conversationSub?.cancel();
     final channel = _typingChannel;
     if (channel != null) {
       Supabase.instance.client.removeChannel(channel);
+    }
+    final presenceChan = _peerPresenceChannel;
+    if (presenceChan != null) {
+      PresenceService.instance.removeSubscription(presenceChan);
     }
     super.dispose();
   }
@@ -980,6 +1029,28 @@ class _ChatScreenState extends State<ChatScreen> {
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
                                       color:
                                           Theme.of(context).colorScheme.primary,
+                                    ),
+                          )
+                        else if (_peerOnline)
+                          Text(
+                            'online',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                          )
+                        else if (_peerLastSeen != null)
+                          Text(
+                            PresenceService.formatLastActive(_peerLastSeen!),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                     ),
                           ),
                       ],

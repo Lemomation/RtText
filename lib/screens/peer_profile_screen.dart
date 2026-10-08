@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/services/conversations_service.dart';
+import 'package:rttext/services/presence_service.dart';
 import 'package:rttext/widgets/app_toast.dart';
 import 'package:rttext/widgets/bot_avatar.dart';
 import 'package:rttext/widgets/full_screen_image_viewer.dart';
@@ -39,6 +40,9 @@ class _PeerProfileScreenState extends State<PeerProfileScreen> {
   String? _username;
   String? _avatarUrl;
   DateTime? _createdAt;
+  DateTime? _lastSeenAt;
+  bool _peerOnline = false;
+  RealtimeChannel? _presenceChannel;
 
   List<Map<String, dynamic>> _sharedMedia = [];
   bool _loadingMedia = false;
@@ -51,9 +55,34 @@ class _PeerProfileScreenState extends State<PeerProfileScreen> {
     _avatarUrl = widget.initialAvatarUrl;
 
     _loadProfile();
+    _subscribePresence();
     if (widget.conversationId != null) {
       _loadSharedMedia();
     }
+  }
+
+  void _subscribePresence() {
+    _presenceChannel = PresenceService.instance.createPeerPresenceSubscription(
+      peerId: widget.peerId,
+      onStatusChange: (isOnline) {
+        if (!mounted) return;
+        setState(() {
+          if (_peerOnline && !isOnline) {
+            _lastSeenAt = DateTime.now();
+          }
+          _peerOnline = isOnline;
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    final chan = _presenceChannel;
+    if (chan != null) {
+      PresenceService.instance.removeSubscription(chan);
+    }
+    super.dispose();
   }
 
   Future<void> _loadProfile() async {
@@ -66,6 +95,9 @@ class _PeerProfileScreenState extends State<PeerProfileScreen> {
           _avatarUrl = profile['avatar_url'] as String? ?? _avatarUrl;
           if (profile['created_at'] != null) {
             _createdAt = DateTime.tryParse(profile['created_at'] as String);
+          }
+          if (profile['last_seen_at'] != null) {
+            _lastSeenAt = DateTime.tryParse(profile['last_seen_at'] as String);
           }
         });
       }
@@ -276,6 +308,38 @@ class _PeerProfileScreenState extends State<PeerProfileScreen> {
                   ],
                 ),
               ),
+            ),
+          const SizedBox(height: 8),
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _peerOnline
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.outlineVariant,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _peerOnline
+                      ? 'Online now'
+                      : (_lastSeenAt != null
+                          ? PresenceService.formatLastActive(_lastSeenAt!)
+                          : 'Offline'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: _peerOnline
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                    fontWeight:
+                        _peerOnline ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
             ),
           ),
           if (_createdAt != null) ...[
