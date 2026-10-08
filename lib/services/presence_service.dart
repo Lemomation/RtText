@@ -52,15 +52,30 @@ class PresenceService with WidgetsBindingObserver {
     channel.subscribe((status, error) async {
       if (status == RealtimeSubscribeStatus.subscribed) {
         _isTracking = true;
-        try {
-          await channel.track({
-            'user_id': uid,
-            'online': true,
-          });
-        } catch (_) {}
+        await _trackSelf();
         _updateLastSeen();
       }
     });
+  }
+
+  Future<void> _trackSelf() async {
+    final channel = _myPresenceChannel;
+    final uid = _currentUserId;
+    if (channel == null || uid == null) return;
+    try {
+      await channel.track({
+        'user_id': uid,
+        'online': true,
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _untrackSelf() async {
+    final channel = _myPresenceChannel;
+    if (channel == null) return;
+    try {
+      await channel.untrack();
+    } catch (_) {}
   }
 
   void _startHeartbeat() {
@@ -107,10 +122,7 @@ class PresenceService with WidgetsBindingObserver {
         _startHeartbeat();
         final channel = _myPresenceChannel;
         if (channel != null && _isTracking) {
-          channel.track({
-            'user_id': _currentUserId,
-            'online': true,
-          }).catchError((_) {});
+          _trackSelf();
         } else {
           _subscribeAndTrack();
         }
@@ -122,7 +134,7 @@ class PresenceService with WidgetsBindingObserver {
       case AppLifecycleState.hidden:
         _heartbeatTimer?.cancel();
         _heartbeatTimer = null;
-        _myPresenceChannel?.untrack().catchError((_) {});
+        _untrackSelf();
         _updateLastSeen();
         break;
     }

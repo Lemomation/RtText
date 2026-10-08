@@ -309,6 +309,7 @@ class _PeerProfileScreenState extends State<PeerProfileScreen> {
                 ),
               ),
             ),
+          ),
           const SizedBox(height: 8),
           Center(
             child: Row(
