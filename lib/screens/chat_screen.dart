@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:rttext/core/animations.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/conversation.dart';
+import 'package:rttext/models/conversation_member.dart';
 import 'package:rttext/models/message.dart';
 import 'package:rttext/services/beads_service.dart';
 import 'package:rttext/services/conversations_service.dart';
@@ -50,6 +51,14 @@ class _ChatScreenState extends State<ChatScreen> {
   Bot? _bot;
   bool _awaitingReply = false;
 
+  bool _isGroup = false;
+  String? _groupTitle;
+  String? _groupAvatarUrl;
+  List<ConversationMember> _groupMembers = [];
+  String? _typingBotName;
+  String _mentionQuery = '';
+  bool _showMentionSuggestions = false;
+
   // DM mode: the conversation is human-to-human (dm_user_id set, bot_id
   // null). Bubbles attribute via sender_id and sending persists the message
   // only — no typing indicator, no bead balance, no ai-reply.
@@ -84,11 +93,19 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _service = ConversationsService(Supabase.instance.client);
     _myUid = Supabase.instance.client.auth.currentUser?.id;
+    _controller.addListener(_onTextChanged);
 
     final init = widget.initialConversation;
     if (init != null) {
-      _isDm = init.isDm;
-      if (init.isDm) {
+      if (init.isGroup) {
+        _isGroup = true;
+        _groupTitle = init.title;
+        _groupAvatarUrl = init.avatarUrl;
+        _loadGroupMembers();
+        _loadBalance();
+        _initTypingChannel();
+      } else if (init.isDm) {
+        _isDm = true;
         _peerId = init.peerIdFor(_myUid ?? '');
         _peerName = init.peerName;
         _peerAvatarUrl = init.peerAvatarUrl;
@@ -165,7 +182,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final conv = await Supabase.instance.client
           .from('conversations')
-          .select('id,bot_id,dm_user_id,user_id,user_last_read_at,dm_user_last_read_at')
+          .select('id,bot_id,dm_user_id,user_id,user_last_read_at,dm_user_last_read_at,is_group,title,avatar_url,created_by')
           .eq('id', widget.chatId)
           .maybeSingle();
       if (conv == null) return;
@@ -180,6 +197,21 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         });
       }
+
+      if (parsed.isGroup) {
+        if (!mounted) return;
+        setState(() {
+          _isGroup = true;
+          _groupTitle = parsed.title;
+          _groupAvatarUrl = parsed.avatarUrl;
+          _myUid = myUid;
+        });
+        _initTypingChannel();
+        _loadGroupMembers();
+        _loadBalance();
+        return;
+      }
+
       final dmUserId = parsed.dmUserId;
       if (dmUserId != null) {
         // Human DM: free chat. Beads are never loaded here — the bead
@@ -207,6 +239,62 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (_) {
       // App bar simply keeps the generic title.
     }
+  }
+
+  Future<void> _loadGroupMembers() async {
+    try {
+      final members = await _service.getGroupMembers(widget.chatId);
+      if (mounted) {
+        setState(() => _groupMembers = members);
+      }
+    } catch (_) {}
+  }
+
+  void _onTextChanged() {
+    final text = _controller.text;
+    final selection = _controller.selection;
+    if (!_isGroup || selection.baseOffset <= 0) {
+      if (_showMentionSuggestions) {
+        setState(() => _showMentionSuggestions = false);
+      }
+      return;
+    }
+
+    final beforeCursor = text.substring(0, selection.baseOffset);
+    final lastAt = beforeCursor.lastIndexOf('@');
+    if (lastAt >= 0 &&
+        (lastAt == 0 ||
+            beforeCursor[lastAt - 1] == ' ' ||
+            beforeCursor[lastAt - 1] == '\n')) {
+      final query = beforeCursor.substring(lastAt + 1).toLowerCase();
+      if (!query.contains(' ')) {
+        setState(() {
+          _mentionQuery = query;
+          _showMentionSuggestions = true;
+        });
+        return;
+      }
+    }
+
+    if (_showMentionSuggestions) {
+      setState(() => _showMentionSuggestions = false);
+    }
+  }
+
+  void _insertMention(ConversationMember member) {
+    final text = _controller.text;
+    final selection = _controller.selection;
+    final beforeCursor = text.substring(0, selection.baseOffset);
+    final lastAt = beforeCursor.lastIndexOf('@');
+    if (lastAt >= 0) {
+      final afterCursor = text.substring(selection.baseOffset);
+      final newText =
+          '${beforeCursor.substring(0, lastAt)}@${member.name} $afterCursor';
+      _controller.text = newText;
+      final newCursorPos = lastAt + member.name.length + 2;
+      _controller.selection = TextSelection.collapsed(offset: newCursorPos);
+    }
+    setState(() => _showMentionSuggestions = false);
   }
 
   void _initTypingChannel() {
@@ -246,7 +334,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onTypingChanged(bool isTyping) {
-    if (!_isDm || _typingChannel == null || _myUid == null) return;
+    if ((!_isDm && !_isGroup) || _typingChannel == null || _myUid == null) {
+      return;
+    }
     _typingChannel?.sendBroadcastMessage(
       event: isTyping ? 'typing' : 'stop_typing',
       payload: {'user_id': _myUid!},
@@ -255,6 +345,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _scrollController.dispose();
     _peerTypingTimer?.cancel();
@@ -380,12 +471,31 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  String? _replySenderName(Message? replyTarget) {
+    if (replyTarget == null) return null;
+    if (_isMine(replyTarget)) return 'You';
+    if (_isGroup) {
+      if (replyTarget.botId != null || replyTarget.isAssistant) {
+        for (final m in _groupMembers) {
+          if (m.botId == replyTarget.botId || m.isBot) return m.name;
+        }
+        return 'Bot';
+      }
+      for (final m in _groupMembers) {
+        if (m.userId == replyTarget.senderId) return m.name;
+      }
+      return 'Member';
+    }
+    if (_isDm) return _peerName ?? 'Friend';
+    return _bot?.name ?? 'Bot';
+  }
+
   Future<void> _send() async {
     final text = _controller.text.trim();
     final hasMedia = _attachedBytes != null;
     if ((text.isEmpty && !hasMedia) ||
         _awaitingReply ||
-        _beads == 0 ||
+        (!_isGroup && _beads == 0) ||
         _isUploadingMedia) {
       return;
     }
@@ -400,6 +510,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _attachedBytes = null;
       _attachedExt = null;
       _replyingTo = null;
+      _showMentionSuggestions = false;
     });
 
     String? uploadedUrl;
@@ -421,12 +532,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) setState(() => _isUploadingMedia = false);
     }
 
-    final replySenderName = replyTarget == null
-        ? null
-        : (_isMine(replyTarget)
-            ? 'You'
-            : (_isDm ? (_peerName ?? 'Friend') : (_bot?.name ?? 'Bot')));
-
+    final replySenderName = _replySenderName(replyTarget);
     final replySnippet = replyTarget == null
         ? null
         : (replyTarget.content.trim().isNotEmpty
@@ -438,9 +544,7 @@ class _ChatScreenState extends State<ChatScreen> {
       conversationId: widget.chatId,
       role: 'user',
       content: text,
-      // DM messages carry the sender so both sides can attribute bubbles;
-      // bot chats leave it null exactly as before.
-      senderId: _isDm ? _myUid : null,
+      senderId: (_isDm || _isGroup) ? _myUid : null,
       mediaUrl: uploadedUrl,
       replyToId: replyTarget?.id,
       replyToContent: replySnippet,
@@ -448,16 +552,50 @@ class _ChatScreenState extends State<ChatScreen> {
       createdAt: DateTime.now(),
       pending: true,
     );
+
+    // Group chat: check Trigger A (bot tagged with @BotName or replied to)
+    ConversationMember? triggeredBot;
+    if (_isGroup) {
+      for (final m in _groupMembers) {
+        if (m.isBot) {
+          final pattern = RegExp('@' + RegExp.escape(m.name), caseSensitive: false);
+          if (pattern.hasMatch(text)) {
+            triggeredBot = m;
+            break;
+          }
+        }
+      }
+      if (triggeredBot == null && replyTarget != null) {
+        if (replyTarget.botId != null) {
+          for (final m in _groupMembers) {
+            if (m.botId == replyTarget.botId) {
+              triggeredBot = m;
+              break;
+            }
+          }
+        } else if (replyTarget.isAssistant) {
+          for (final m in _groupMembers) {
+            if (m.isBot) {
+              triggeredBot = m;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    final willTriggerAi = (!_isDm && !_isGroup) || (_isGroup && triggeredBot != null);
+
     setState(() {
       _pending.add(optimistic);
-      // No typing indicator in DMs: only AI replies "type".
-      if (!_isDm) _awaitingReply = true;
+      if (willTriggerAi) {
+        _awaitingReply = true;
+        if (triggeredBot != null) _typingBotName = triggeredBot.name;
+      }
     });
     _scrollToBottom();
 
     if (_isDm) {
-      // Human DM: free — persist the message and nothing else. Never
-      // requestAiReply, never beads.
       try {
         await _service.sendMessage(
           widget.chatId,
@@ -481,6 +619,62 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
+    if (_isGroup) {
+      // 1. Send the human message to the group
+      try {
+        final row = await _service.sendMessage(
+          widget.chatId,
+          text,
+          senderIdToWrite: _myUid,
+          mediaUrl: uploadedUrl,
+          replyToId: replyTarget?.id,
+          replyToContent: replySnippet,
+          replyToSender: replySenderName,
+        );
+        if (mounted) {
+          setState(() {
+            _pending.removeWhere((p) => p.id == optimistic.id);
+          });
+        }
+        assert(row.id.isNotEmpty);
+      } catch (_) {
+        if (!mounted) return;
+        showAppToast(context, 'Message not sent', style: AppToastStyle.error);
+        return;
+      }
+
+      // 2. If no bot was triggered: free human banter, done!
+      if (triggeredBot == null) {
+        return;
+      }
+
+      // 3. Bot was triggered: check beads
+      if ((_beads ?? 1) <= 0) {
+        if (mounted) {
+          setState(() {
+            _awaitingReply = false;
+            _typingBotName = null;
+          });
+          showAppToast(
+            context,
+            'Out of beads — @${triggeredBot.name} could not reply',
+            style: AppToastStyle.info,
+            leading: const BeadIcon(size: 20),
+          );
+        }
+        return;
+      }
+
+      // 4. Request AI reply for the triggered bot
+      await _generateReply(
+        text.isNotEmpty ? text : '📷 [Sent a photo]',
+        botId: triggeredBot.botId,
+        botName: triggeredBot.name,
+      );
+      return;
+    }
+
+    // 1:1 Bot chat:
     try {
       final row = await _service.sendMessage(
         widget.chatId,
@@ -490,31 +684,35 @@ class _ChatScreenState extends State<ChatScreen> {
         replyToContent: replySnippet,
         replyToSender: replySenderName,
       );
-      // Drop the optimistic copy as soon as the server row exists — don't
-      // wait for the realtime echo, which can lag and show the bubble twice.
       if (mounted) {
         setState(() {
           _pending.removeWhere((p) => p.id == optimistic.id);
         });
       }
-      // The persisted row arrives via the realtime stream; the returned row
-      // is only used to retire the optimistic bubble above.
       assert(row.id.isNotEmpty);
     } catch (_) {
-      // Leave the optimistic bubble in place; the AI retry toast below
-      // still lets the user retry generation.
+      // Leave optimistic bubble in place
     }
 
     await _generateReply(text.isNotEmpty ? text : '📷 [Sent a photo]');
   }
 
-  Future<void> _generateReply(String sentText) async {
-    setState(() => _awaitingReply = true);
+  Future<void> _generateReply(
+    String sentText, {
+    String? botId,
+    String? botName,
+  }) async {
+    setState(() {
+      _awaitingReply = true;
+      if (botName != null) _typingBotName = botName;
+    });
     try {
-      final result = await _service.requestAiReply(widget.chatId);
+      final result =
+          await _service.requestAiReply(widget.chatId, botId: botId);
       if (!mounted) return;
       setState(() {
         _awaitingReply = false;
+        _typingBotName = null;
         if (result.remainingBeads != null) _beads = result.remainingBeads;
       });
       _scrollToBottom();
@@ -522,24 +720,30 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       setState(() {
         _awaitingReply = false;
+        _typingBotName = null;
         _beads = 0;
       });
       showAppToast(
         context,
-        'You\u2019re out of beads — claim 20 free ones tomorrow to keep '
-        'chatting',
+        _isGroup
+            ? '${botName ?? 'Bot'} could not reply — you\u2019re out of beads'
+            : 'You\u2019re out of beads — claim free beads later to keep chatting',
         style: AppToastStyle.info,
         leading: const BeadIcon(size: 24),
       );
     } catch (_) {
       if (!mounted) return;
-      setState(() => _awaitingReply = false);
+      setState(() {
+        _awaitingReply = false;
+        _typingBotName = null;
+      });
       showAppToast(
         context,
-        'The bot could not reply',
+        '${botName ?? 'The bot'} could not reply',
         style: AppToastStyle.error,
         actionLabel: 'Retry',
-        onAction: () => _generateReply(sentText),
+        onAction: () =>
+            _generateReply(sentText, botId: botId, botName: botName),
       );
     }
   }
@@ -604,7 +808,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       );
                     },
                   ),
-                if ((isMine || !_isDm) && !message.pending)
+                if ((isMine || (!_isDm && !_isGroup)) && !message.pending)
                   ListTile(
                     leading: Icon(
                       Icons.delete_outline_rounded,
@@ -628,7 +832,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _openDetails() {
-    if (_isDm) {
+    if (_isGroup) {
+      final titleParam = Uri.encodeComponent(_groupTitle ?? '');
+      final pfpParam = Uri.encodeComponent(_groupAvatarUrl ?? '');
+      context.push(
+        '/group-info/${widget.chatId}?title=$titleParam&avatarUrl=$pfpParam',
+      );
+    } else if (_isDm) {
       final pid = _peerId;
       if (pid != null) {
         final nameParam = Uri.encodeComponent(_peerName ?? '');
@@ -697,7 +907,55 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
             child: Row(
               children: [
-                if (_isDm) ...[
+                if (_isGroup) ...[
+                  BotAvatar(
+                    name: _groupTitle ?? 'Group',
+                    url: _groupAvatarUrl,
+                    radius: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _groupTitle ?? 'Group',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        if (_typingBotName != null)
+                          Text(
+                            '$_typingBotName is typing…',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                          )
+                        else if (_peerTyping)
+                          Text(
+                            'typing…',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                          )
+                        else
+                          Text(
+                            '${_groupMembers.length} member${_groupMembers.length == 1 ? '' : 's'}',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ] else if (_isDm) ...[
                   BotAvatar(
                     name: _peerName ?? '?',
                     url: _peerAvatarUrl,
@@ -770,7 +1028,13 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         actions: [
-          if (_isDm && _peerId != null)
+          if (_isGroup)
+            IconButton(
+              icon: const Icon(Icons.group_outlined),
+              tooltip: 'Group info',
+              onPressed: _openDetails,
+            )
+          else if (_isDm && _peerId != null)
             IconButton(
               icon: const Icon(Icons.info_outline_rounded),
               tooltip: 'Contact info',
@@ -796,8 +1060,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
                 if (server != null) {
                   // Drop pending optimistic bubbles echoed by the server.
-                  // Matching sender_id too keeps a DM peer's identical text
-                  // from swallowing our optimistic bubble; in bot chats both
+                  // Matching sender_id too keeps a DM/group peer's identical text
+                  // from swallowing our optimistic bubble; in 1:1 bot chats both
                   // sides are null, so behavior is unchanged.
                   _pending.removeWhere(
                     (p) => server.any((m) =>
@@ -809,8 +1073,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   final messages = [...server, ..._pending];
                   if (messages.isEmpty) {
                     return _EmptyThread(
-                      name: _isDm ? _peerName : _bot?.name,
+                      name: _isGroup
+                          ? _groupTitle
+                          : (_isDm ? _peerName : _bot?.name),
                       isDm: _isDm,
+                      isGroup: _isGroup,
                     );
                   }
                   _service.markAsRead(widget.chatId);
@@ -821,28 +1088,28 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
-          // Out-of-beads banner: collapse/expand between chats with balance.
+          if (_isGroup && _showMentionSuggestions)
+            _MentionSuggestionsBar(
+              members: _groupMembers,
+              query: _mentionQuery,
+              onSelect: _insertMention,
+            ),
+          // Out-of-beads banner: only show for 1:1 bot chats
           AnimatedSize(
             duration: Motion.standard,
             curve: Motion.emphasizedCurve,
             alignment: Alignment.bottomCenter,
-            child: _beads == 0
+            child: (!_isGroup && _beads == 0)
                 ? const _OutOfBeadsBanner()
                 : const SizedBox(width: double.infinity),
           ),
           _InputBar(
             controller: _controller,
             enabled: !_awaitingReply,
-            outOfBeads: _beads == 0,
+            outOfBeads: !_isGroup && _beads == 0,
             isUploading: _isUploadingMedia,
             replyingTo: _replyingTo,
-            replySender: _replyingTo == null
-                ? null
-                : (_isMine(_replyingTo!)
-                    ? 'You'
-                    : (_isDm
-                        ? (_peerName ?? 'Friend')
-                        : (_bot?.name ?? 'Bot'))),
+            replySender: _replySenderName(_replyingTo),
             onCancelReply: _cancelReply,
             attachedBytes: _attachedBytes,
             onRemoveAttachment: () => setState(() {
@@ -859,9 +1126,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Which side of the screen a bubble sits on. Bot chats keep the
-  /// role-based rule; DM chats attribute via sender_id == my uid.
+  /// role-based rule; DM & group chats attribute via sender_id == my uid.
   bool _isMine(Message m) =>
-      _isDm ? m.senderId != null && m.senderId == _myUid : m.isUser;
+      (_isDm || _isGroup)
+          ? (m.senderId != null && m.senderId == _myUid)
+          : m.isUser;
 
   /// [botBubbleColor] is the bot's stored `#RRGGBB` bubble tint (null = theme
   /// default), applied to assistant bubbles only.
@@ -882,12 +1151,40 @@ class _ChatScreenState extends State<ChatScreen> {
               ? (_peerLastReadAt != null &&
                   message.createdAt != null &&
                   !message.createdAt!.isAfter(_peerLastReadAt!))
-              : (i < messages.length - 1 && !message.pending));
+              : (!_isGroup && i < messages.length - 1 && !message.pending));
+
+      // Resolve sender display name and isBot for incoming group messages
+      String? senderName;
+      bool isBotSender = false;
+      if (_isGroup && !isMine) {
+        if (message.botId != null || message.isAssistant) {
+          isBotSender = true;
+          for (final m in _groupMembers) {
+            if (m.botId == message.botId || m.isBot) {
+              senderName = m.name;
+              break;
+            }
+          }
+          senderName ??= 'Bot';
+        } else if (message.senderId != null) {
+          for (final m in _groupMembers) {
+            if (m.userId == message.senderId) {
+              senderName = m.name;
+              break;
+            }
+          }
+          senderName ??= 'Member';
+        }
+      }
+
       items.add(
         _MessageBubble(
           message: message,
           botBubbleColor: botBubbleColor,
           isDm: _isDm,
+          isGroup: _isGroup,
+          senderName: senderName,
+          isBotSender: isBotSender,
           myUserId: _myUid,
           groupedWithPrev:
               !separator && prev != null && _isMine(prev) == isMine,
@@ -897,8 +1194,13 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     }
-    if ((!_isDm && _awaitingReply) || (_isDm && _peerTyping)) {
-      items.add(const TypingIndicator());
+    if ((!_isDm && !_isGroup && _awaitingReply) ||
+        (_isGroup && _awaitingReply) ||
+        ((_isDm || _isGroup) && _peerTyping)) {
+      items.add(TypingIndicator(
+        label:
+            _typingBotName != null ? '$_typingBotName is typing…' : 'typing…',
+      ));
     }
     return ListView(
       controller: _scrollController,
@@ -958,6 +1260,9 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     this.botBubbleColor,
     this.isDm = false,
+    this.isGroup = false,
+    this.senderName,
+    this.isBotSender = false,
     this.myUserId,
     this.groupedWithPrev = false,
     this.isRead = false,
@@ -970,9 +1275,11 @@ class _MessageBubble extends StatelessWidget {
   /// Owner-picked `#RRGGBB` tint for this bot's bubbles; null = theme default.
   final String? botBubbleColor;
 
-  /// Human DM mode: sides are decided by [myUserId], not by role (both
-  /// participants' messages are stored with role 'user').
+  /// Human DM mode: sides are decided by [myUserId], not by role.
   final bool isDm;
+  final bool isGroup;
+  final String? senderName;
+  final bool isBotSender;
   final String? myUserId;
   final bool groupedWithPrev;
   final bool isRead;
@@ -982,7 +1289,7 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isUser = isDm
+    final isUser = (isDm || isGroup)
         ? message.senderId != null && message.senderId == myUserId
         : message.isUser;
     // Only assistant bubbles take the bot's tint; user bubbles keep the
@@ -1035,6 +1342,47 @@ class _MessageBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (isGroup && !isUser && senderName != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        senderName!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: isBotSender
+                              ? theme.colorScheme.primary
+                              : (isBubbleLight
+                                  ? const Color(0xFF1E293B)
+                                  : const Color(0xFF93C5FD)),
+                        ),
+                      ),
+                      if (isBotSender) ...[
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'BOT',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: theme.colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
               if (hasQuote) ...[
                 Container(
                   margin: const EdgeInsets.only(bottom: 6),
@@ -1207,23 +1555,32 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _EmptyThread extends StatelessWidget {
-  const _EmptyThread({this.name, this.isDm = false});
+  const _EmptyThread({
+    this.name,
+    this.isDm = false,
+    this.isGroup = false,
+  });
 
   final String? name;
   final bool isDm;
+  final bool isGroup;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fallbackLabel = isDm ? 'your friend' : 'your bot';
+    final fallbackLabel = isGroup
+        ? 'the group'
+        : (isDm ? 'your friend' : 'your bot');
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          BotAvatar(name: name ?? '?', radius: 36),
+          BotAvatar(name: name ?? (isGroup ? 'Group' : '?'), radius: 36),
           const SizedBox(height: 16),
           Text(
-            'Say hi to ${name ?? fallbackLabel}!',
+            isGroup
+                ? 'Welcome to ${name ?? fallbackLabel}!'
+                : 'Say hi to ${name ?? fallbackLabel}!',
             style: theme.textTheme.titleMedium,
           ),
         ],
@@ -1568,6 +1925,105 @@ class _InputBarState extends State<_InputBar> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MentionSuggestionsBar extends StatelessWidget {
+  const _MentionSuggestionsBar({
+    required this.members,
+    required this.query,
+    required this.onSelect,
+  });
+
+  final List<ConversationMember> members;
+  final String query;
+  final ValueChanged<ConversationMember> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = members.where((m) {
+      if (query.isEmpty) return true;
+      return m.name.toLowerCase().contains(query.toLowerCase());
+    }).toList();
+
+    if (filtered.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 160),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: ListView.separated(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          itemCount: filtered.length,
+          separatorBuilder: (_, __) => Divider(
+            height: 1,
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
+          ),
+          itemBuilder: (context, index) {
+            final member = filtered[index];
+            return ListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              leading: BotAvatar(
+                name: member.name,
+                url: member.avatarUrl,
+                radius: 14,
+              ),
+              title: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      member.name,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (member.isBot) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'BOT',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              onTap: () => onSelect(member),
+            );
+          },
+        ),
       ),
     );
   }

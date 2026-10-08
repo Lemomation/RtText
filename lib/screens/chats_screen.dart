@@ -58,20 +58,26 @@ class _ChatsScreenState extends State<ChatsScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Deleted chat with ${conversation.isDm
-                ? (conversation.peerName ?? 'them')
-                : (conversation.botName ?? 'bot')}',
+            'Deleted chat with ${conversation.isGroup
+                ? (conversation.title ?? 'group')
+                : (conversation.isDm
+                    ? (conversation.peerName ?? 'them')
+                    : (conversation.botName ?? 'bot'))}',
           ),
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () async {
               try {
-                // Restore the row in its original orientation: a DM is
-                // identified by dm_user_id (either side may have deleted it),
-                // a bot chat by bot_id.
+                // Restore the row in its original orientation: a group is
+                // identified by is_group, a DM by dm_user_id, a bot chat by bot_id.
                 await Supabase.instance.client.from('conversations').insert({
                   'user_id': conversation.userId,
-                  if (conversation.isDm)
+                  if (conversation.isGroup) ...[
+                    'is_group': true,
+                    if (conversation.title != null) 'title': conversation.title,
+                    if (conversation.avatarUrl != null)
+                      'avatar_url': conversation.avatarUrl,
+                  ] else if (conversation.isDm)
                     'dm_user_id': conversation.dmUserId
                   else
                     'bot_id': conversation.botId,
@@ -84,6 +90,67 @@ class _ChatsScreenState extends State<ChatsScreen> {
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Delete failed: $e')));
     }
+  }
+
+  void _showNewChatMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.group_add_rounded,
+                    color: Theme.of(ctx).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                title: const Text('New Group Chat',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Chat together with friends and AI bots'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/create-group');
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.secondaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.smart_toy_rounded,
+                    color: Theme.of(ctx).colorScheme.onSecondaryContainer,
+                  ),
+                ),
+                title: const Text('New AI Character',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Create a custom AI persona'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/create-bot');
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -127,7 +194,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/create-bot'),
+        onPressed: _showNewChatMenu,
         child: const RtIcon(type: RtIconType.plus),
       )
           .animate()
@@ -178,7 +245,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
           final filtered = _searchQuery.isEmpty
               ? conversations
               : conversations.where((c) {
-                  final name = (c.isDm ? c.peerName : c.botName) ?? '';
+                  final name = c.isGroup
+                      ? (c.title ?? 'Group')
+                      : ((c.isDm ? c.peerName : c.botName) ?? '');
                   final preview = c.lastMessagePreview ?? '';
                   return name.toLowerCase().contains(_searchQuery) ||
                       preview.toLowerCase().contains(_searchQuery);
@@ -272,18 +341,24 @@ class _ChatTile extends StatelessWidget {
         onTap: onTap,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: BotAvatar(
-          name: conversation.isDm
-              ? (conversation.peerName ?? '?')
-              : (conversation.botName ?? '?'),
-          url: conversation.isDm
-              ? conversation.peerAvatarUrl
-              : conversation.botPfpUrl,
+          name: conversation.isGroup
+              ? (conversation.title ?? 'Group')
+              : (conversation.isDm
+                  ? (conversation.peerName ?? '?')
+                  : (conversation.botName ?? '?')),
+          url: conversation.isGroup
+              ? conversation.avatarUrl
+              : (conversation.isDm
+                  ? conversation.peerAvatarUrl
+                  : conversation.botPfpUrl),
           radius: 26,
         ),
         title: Text(
-          conversation.isDm
-              ? (conversation.peerName ?? 'Unknown user')
-              : (conversation.botName ?? 'Unknown bot'),
+          conversation.isGroup
+              ? (conversation.title ?? 'Group Chat')
+              : (conversation.isDm
+                  ? (conversation.peerName ?? 'Unknown user')
+                  : (conversation.botName ?? 'Unknown bot')),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.titleSmall?.copyWith(

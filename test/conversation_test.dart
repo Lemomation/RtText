@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rttext/models/conversation.dart';
+import 'package:rttext/models/conversation_member.dart';
 import 'package:rttext/models/message.dart';
 import 'package:rttext/models/profile.dart';
 
@@ -87,6 +88,31 @@ void main() {
       final updated = conv.copyWith(lastMessageAt: now);
       expect(updated.lastMessageAt, now);
     });
+
+    test('roundtrips group chat fields in fromMap / toMap', () {
+      final map = <String, dynamic>{
+        'id': 'g1',
+        'user_id': 'u1',
+        'bot_id': '',
+        'is_group': true,
+        'title': 'The Guild',
+        'avatar_url': 'https://example.com/guild.png',
+        'created_by': 'u1',
+      };
+      final conv = Conversation.fromMap(map);
+      expect(conv.isGroup, isTrue);
+      expect(conv.isDm, isFalse);
+      expect(conv.isBotChat, isFalse);
+      expect(conv.title, 'The Guild');
+      expect(conv.avatarUrl, 'https://example.com/guild.png');
+      expect(conv.createdBy, 'u1');
+
+      final serialized = conv.toMap();
+      expect(serialized['is_group'], isTrue);
+      expect(serialized['title'], 'The Guild');
+      expect(serialized['avatar_url'], 'https://example.com/guild.png');
+      expect(serialized['created_by'], 'u1');
+    });
   });
 
   group('Message model', () {
@@ -160,6 +186,60 @@ void main() {
       expect(updated.replyToId, 'm0');
       expect(updated.replyToContent, 'prior text');
       expect(updated.replyToSender, 'someone');
+    });
+
+    test('roundtrips botId in fromMap / toMap and copyWith', () {
+      final map = <String, dynamic>{
+        'id': 'm4',
+        'conversation_id': 'c1',
+        'role': 'assistant',
+        'content': 'I am Nobara',
+        'bot_id': 'bot-nobara-123',
+      };
+      final m = Message.fromMap(map);
+      expect(m.botId, 'bot-nobara-123');
+      expect(m.toMap()['bot_id'], 'bot-nobara-123');
+
+      final copied = m.copyWith(botId: 'bot-new-456');
+      expect(copied.botId, 'bot-new-456');
+    });
+  });
+
+  group('ConversationMember serialization', () {
+    test('roundtrips human and bot member correctly', () {
+      final humanMap = <String, dynamic>{
+        'member_id': 'm1',
+        'conversation_id': 'g1',
+        'user_id': 'u1',
+        'role': 'admin',
+        'name': 'Bilquees',
+        'avatar_url': 'https://example.com/b.jpg',
+        'is_bot': false,
+      };
+      final human = ConversationMember.fromMap(humanMap);
+      expect(human.id, 'm1');
+      expect(human.userId, 'u1');
+      expect(human.botId, isNull);
+      expect(human.isAdmin, isTrue);
+      expect(human.isBot, isFalse);
+      expect(human.name, 'Bilquees');
+
+      final botMap = <String, dynamic>{
+        'member_id': 'm2',
+        'conversation_id': 'g1',
+        'bot_id': 'b1',
+        'role': 'member',
+        'name': 'Nobara',
+        'avatar_url': 'https://example.com/nobara.jpg',
+        'is_bot': true,
+      };
+      final bot = ConversationMember.fromMap(botMap);
+      expect(bot.id, 'm2');
+      expect(bot.userId, isNull);
+      expect(bot.botId, 'b1');
+      expect(bot.isAdmin, isFalse);
+      expect(bot.isBot, isTrue);
+      expect(bot.name, 'Nobara');
     });
   });
 

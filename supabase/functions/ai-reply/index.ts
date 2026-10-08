@@ -57,9 +57,11 @@ Deno.serve(async (req: Request) => {
   }
 
   let conversationId: string;
+  let targetBotId: string | null = null;
   try {
     const body = await req.json();
     conversationId = String(body?.conversation_id ?? "");
+    if (body?.bot_id) targetBotId = String(body.bot_id);
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
@@ -93,14 +95,33 @@ Deno.serve(async (req: Request) => {
 
   const { data: conversation, error: convError } = await userClient
     .from("conversations")
-    .select("id, user_id, bot_id")
+    .select("id, user_id, bot_id, is_group")
     .eq("id", conversationId)
     .maybeSingle();
   if (convError || !conversation) {
     return json({ error: "Conversation not found" }, 404);
   }
-  if (conversation.user_id !== authData.user.id) {
-    return json({ error: "Forbidden" }, 403);
+
+  let botIdToUse: string;
+  if (conversation.is_group) {
+    const { data: membership } = await userClient
+      .from("conversation_members")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", authData.user.id)
+      .maybeSingle();
+    if (!membership) {
+      return json({ error: "Forbidden: not a group member" }, 403);
+    }
+    if (!targetBotId) {
+      return json({ error: "bot_id is required for group chats" }, 400);
+    }
+    botIdToUse = targetBotId;
+  } else {
+    if (conversation.user_id !== authData.user.id) {
+      return json({ error: "Forbidden" }, 403);
+    }
+    botIdToUse = conversation.bot_id;
   }
 
   // Service-role client for beads, sys_prompt, and history.
@@ -123,8 +144,8 @@ Deno.serve(async (req: Request) => {
 
   const { data: bot, error: botError } = await admin
     .from("bots")
-    .select("sys_prompt, name")
-    .eq("id", conversation.bot_id)
+    .select("sys_prompt, name, owner")
+    .eq("id", botIdToUse)
     .maybeSingle();
   if (botError || !bot) {
     return json({ error: "Bot not found" }, 404);
@@ -267,6 +288,7 @@ Deno.serve(async (req: Request) => {
       conversation_id: conversationId,
       role: "assistant",
       content,
+      bot_id: botIdToUse,
     })
     .select("id")
     .single();
@@ -284,6 +306,33 @@ Deno.serve(async (req: Request) => {
     ref_conversation: conversationId,
     ref_message: inserted?.id ?? null,
   });
+
+  // In group chats, reward the bot owner 1 bead for the generated reply.
+  // (In 1:1 bot chats, this is already handled by the on_message_chat_earned trigger).
+  if (conversation.is_group && bot.owner) {
+    try {
+      const { data: ownerProf } = await admin
+        .from("profiles")
+        .select("beads")
+        .eq("id", bot.owner)
+        .maybeSingle();
+      if (ownerProf) {
+        await admin
+          .from("profiles")
+          .update({ beads: (ownerProf.beads ?? 0) + 1 })
+          .eq("id", bot.owner);
+        await admin.from("credit_events").insert({
+          user_id: bot.owner,
+          delta: 1,
+          reason: "chat_earned",
+          ref_conversation: conversationId,
+          ref_message: inserted?.id ?? null,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to credit bot owner in group chat:", e);
+    }
+  }
 
   await admin
     .from("conversations")

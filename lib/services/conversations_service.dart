@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:rttext/core/uuid.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/models/conversation.dart';
+import 'package:rttext/models/conversation_member.dart';
 import 'package:rttext/models/message.dart';
 import 'package:rttext/services/beads_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -30,7 +31,10 @@ class ConversationsService {
         .stream(primaryKey: ['id'])
         .asyncMap((rows) {
       final mine = rows
-          .where((r) => r['user_id'] == uid || r['dm_user_id'] == uid)
+          .where((r) =>
+              r['user_id'] == uid ||
+              r['dm_user_id'] == uid ||
+              r['is_group'] == true)
           .toList();
       return _enrich(mine.cast<Map<String, dynamic>>());
     });
@@ -39,10 +43,10 @@ class ConversationsService {
   Future<List<Conversation>> fetchConversations() async {
     final uid = _uid;
     if (uid == null) return const [];
+    // RLS scopes rows to participant bot chats, DMs, and group memberships.
     final rows = await _client
         .from('conversations')
         .select()
-        .or('user_id.eq.$uid,dm_user_id.eq.$uid')
         .order('last_message_at', ascending: false);
     return _enrich((rows as List).cast<Map<String, dynamic>>());
   }
@@ -374,11 +378,15 @@ class ConversationsService {
   }
 
   /// Invokes the ai-reply edge function for this conversation.
+  /// Pass [botId] when calling in a group chat to specify which bot is replying.
   ///
   /// Returns the reply text and the caller's remaining bead balance as
   /// reported by the function. Throws [OutOfBeadsException] when the
   /// function answered 402 (balance reached zero).
-  Future<AiReplyResult> requestAiReply(String conversationId) async {
+  Future<AiReplyResult> requestAiReply(
+    String conversationId, {
+    String? botId,
+  }) async {
     // The Authorization header must be sent explicitly: the shared
     // FunctionsClient captures its headers at construction time and can
     // carry the anon key instead of the caller's session token, which the
@@ -389,7 +397,10 @@ class ConversationsService {
       headers: {
         if (token != null) 'Authorization': 'Bearer $token',
       },
-      body: {'conversation_id': conversationId},
+      body: {
+        'conversation_id': conversationId,
+        if (botId != null) 'bot_id': botId,
+      },
     );
     if (res.status == 402) {
       throw const OutOfBeadsException();
@@ -407,6 +418,95 @@ class ConversationsService {
       remainingBeads: (data?['beads'] as num?)?.toInt(),
     );
   }
+
+  /// Creates a new group conversation and populates initial members.
+  Future<Conversation> createGroup({
+    required String title,
+    String? avatarUrl,
+    required List<String> memberUserIds,
+    required List<String> memberBotIds,
+  }) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+
+    final row = await _client
+        .from('conversations')
+        .insert({
+          'is_group': true,
+          'title': title,
+          'avatar_url': avatarUrl,
+          'created_by': uid,
+          'user_id': uid,
+        })
+        .select()
+        .single();
+
+    final convId = row['id'] as String;
+
+    final membersToInsert = <Map<String, dynamic>>[
+      {
+        'conversation_id': convId,
+        'user_id': uid,
+        'role': 'admin',
+      },
+    ];
+
+    for (final mUid in memberUserIds) {
+      if (mUid != uid) {
+        membersToInsert.add({
+          'conversation_id': convId,
+          'user_id': mUid,
+          'role': 'member',
+        });
+      }
+    }
+
+    for (final bId in memberBotIds) {
+      membersToInsert.add({
+        'conversation_id': convId,
+        'bot_id': bId,
+        'role': 'member',
+      });
+    }
+
+    await _client.from('conversation_members').insert(membersToInsert);
+
+    return Conversation.fromMap(row).copyWith(
+      title: title,
+      avatarUrl: avatarUrl,
+    );
+  }
+
+  /// Fetches all members in a group conversation (humans and bots).
+  Future<List<ConversationMember>> getGroupMembers(
+      String conversationId) async {
+    final rows = await _client
+        .from('group_members_view')
+        .select()
+        .eq('conversation_id', conversationId);
+    return (rows as List)
+        .map((r) => ConversationMember.fromMap(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Adds a human or bot member to an existing group.
+  Future<void> addGroupMember(
+    String conversationId, {
+    String? userId,
+    String? botId,
+    String role = 'member',
+  }) async {
+    await _client.from('conversation_members').insert({
+      'conversation_id': conversationId,
+      if (userId != null) 'user_id': userId,
+      if (botId != null) 'bot_id': botId,
+      'role': role,
+    });
+  }
+
+  /// Removes a member from a group.
+  Future<void> removeGroupMember(String memberId) =>
+      _client.from('conversation_members').delete().eq('id', memberId);
 
   Future<void> delete(String conversationId) =>
       _client.from('conversations').delete().eq('id', conversationId);

@@ -10,6 +10,10 @@ class Conversation {
     required this.userId,
     required this.botId,
     this.dmUserId,
+    this.isGroup = false,
+    this.title,
+    this.avatarUrl,
+    this.createdBy,
     this.lastMessageAt,
     this.createdAt,
     this.userLastReadAt,
@@ -26,8 +30,13 @@ class Conversation {
   final String userId;
   final String botId;
 
-  /// The other human in a DM chat; null for bot chats.
+  /// The other human in a DM chat; null for bot chats and group chats.
   final String? dmUserId;
+
+  final bool isGroup;
+  final String? title;
+  final String? avatarUrl;
+  final String? createdBy;
 
   final DateTime? lastMessageAt;
   final DateTime? createdAt;
@@ -42,7 +51,8 @@ class Conversation {
   final String? lastMessagePreview;
   final int unreadCount;
 
-  bool get isDm => dmUserId != null;
+  bool get isDm => !isGroup && dmUserId != null;
+  bool get isBotChat => !isGroup && dmUserId == null;
 
   /// Returns the other participant's user id in a DM given the caller's [myUid].
   /// Returns null if this is a bot chat.
@@ -68,6 +78,10 @@ class Conversation {
 
   Conversation copyWith({
     DateTime? lastMessageAt,
+    bool? isGroup,
+    String? title,
+    String? avatarUrl,
+    String? createdBy,
     String? botName,
     String? botPfpUrl,
     String? peerName,
@@ -82,6 +96,10 @@ class Conversation {
         userId: userId,
         botId: botId,
         dmUserId: dmUserId,
+        isGroup: isGroup ?? this.isGroup,
+        title: title ?? this.title,
+        avatarUrl: avatarUrl ?? this.avatarUrl,
+        createdBy: createdBy ?? this.createdBy,
         lastMessageAt: lastMessageAt ?? this.lastMessageAt,
         createdAt: createdAt,
         userLastReadAt: userLastReadAt ?? this.userLastReadAt,
@@ -99,6 +117,10 @@ class Conversation {
         userId: (map['user_id'] as String?) ?? '',
         botId: (map['bot_id'] as String?) ?? '',
         dmUserId: map['dm_user_id'] as String?,
+        isGroup: (map['is_group'] as bool?) ?? false,
+        title: map['title'] as String?,
+        avatarUrl: map['avatar_url'] as String?,
+        createdBy: map['created_by'] as String?,
         lastMessageAt: map['last_message_at'] == null
             ? null
             : DateTime.tryParse(map['last_message_at'] as String),
@@ -118,6 +140,10 @@ class Conversation {
         'user_id': userId,
         'bot_id': botId,
         if (dmUserId != null) 'dm_user_id': dmUserId,
+        'is_group': isGroup,
+        if (title != null) 'title': title,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
+        if (createdBy != null) 'created_by': createdBy,
         if (lastMessageAt != null)
           'last_message_at': lastMessageAt!.toIso8601String(),
         if (createdAt != null) 'created_at': createdAt!.toIso8601String(),

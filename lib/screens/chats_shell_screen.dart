@@ -34,7 +34,7 @@ class _ChatsShellScreenState extends State<ChatsShellScreen> {
   }
 
   Future<void> _runStartupTasks() async {
-    await _claimDailyBeads();
+    // Daily bead giveaway is suspended to simulate the economy.
     if (!mounted) return;
     await _checkForUpdate();
   }

@@ -8,6 +8,8 @@ import 'package:rttext/screens/chats_screen.dart';
 import 'package:rttext/screens/chats_shell_screen.dart';
 import 'package:rttext/screens/discover_screen.dart';
 import 'package:rttext/screens/create_bot_screen.dart';
+import 'package:rttext/screens/create_group_screen.dart';
+import 'package:rttext/screens/group_info_screen.dart';
 import 'package:rttext/screens/login_screen.dart';
 import 'package:rttext/screens/peer_profile_screen.dart';
 import 'package:rttext/screens/profile_screen.dart';
@@ -84,6 +86,24 @@ abstract final class AppRouter {
                 peerId: state.pathParameters['id'] ?? '',
                 conversationId: state.uri.queryParameters['conversationId'],
                 initialName: state.uri.queryParameters['name'],
+                initialAvatarUrl: state.uri.queryParameters['avatarUrl'],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/create-group',
+            pageBuilder: (context, state) => Motion.page(
+              state: state,
+              child: const CreateGroupScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/group-info/:id',
+            pageBuilder: (context, state) => Motion.page(
+              state: state,
+              child: GroupInfoScreen(
+                conversationId: state.pathParameters['id'] ?? '',
+                initialTitle: state.uri.queryParameters['title'],
                 initialAvatarUrl: state.uri.queryParameters['avatarUrl'],
               ),
             ),
