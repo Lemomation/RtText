@@ -2,7 +2,8 @@
 -- 0013_fix_rls_recursion_and_storage.sql
 -- Fixes:
 -- 1. Infinite recursion in conversation_members RLS by using security definer
---    helper public.is_conversation_member().
+--    helpers public.is_conversation_member(), public.is_conversation_admin(),
+--    and public.is_conversation_owner().
 -- 2. Storage RLS policies for 'pfp' bucket: adds update, delete, and group upload
 --    policies so users can update existing avatars and upload group photos.
 -- -----------------------------------------------------------------------------
@@ -21,15 +22,64 @@ as $$
   );
 $$;
 
+create or replace function public.is_conversation_admin(conv_id uuid, u_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.conversation_members
+    where conversation_id = conv_id
+      and user_id = u_id
+      and role = 'admin'
+  );
+$$;
+
+create or replace function public.is_conversation_owner(conv_id uuid, u_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.conversations
+    where id = conv_id
+      and (user_id = u_id or created_by = u_id)
+  );
+$$;
+
+grant execute on function public.is_conversation_admin(uuid, uuid) to authenticated;
+grant execute on function public.is_conversation_owner(uuid, uuid) to authenticated;
+grant execute on function public.is_conversation_member(uuid, uuid) to authenticated;
+
 alter policy "conversation_members_select" on public.conversation_members
   using (
     user_id = auth.uid()
     or public.is_conversation_member(conversation_id, auth.uid())
-    or exists (
-      select 1 from public.conversations c
-      where c.id = conversation_members.conversation_id
-        and (c.user_id = auth.uid() or c.created_by = auth.uid())
-    )
+    or public.is_conversation_owner(conversation_id, auth.uid())
+  );
+
+alter policy "conversation_members_insert" on public.conversation_members
+  with check (
+    public.is_conversation_owner(conversation_id, auth.uid())
+    or public.is_conversation_admin(conversation_id, auth.uid())
+  );
+
+alter policy "conversation_members_update" on public.conversation_members
+  using (
+    user_id = auth.uid()
+    or public.is_conversation_owner(conversation_id, auth.uid())
+    or public.is_conversation_admin(conversation_id, auth.uid())
+  );
+
+alter policy "conversation_members_delete" on public.conversation_members
+  using (
+    user_id = auth.uid()
+    or public.is_conversation_owner(conversation_id, auth.uid())
+    or public.is_conversation_admin(conversation_id, auth.uid())
   );
 
 alter policy "conversations_group_members_all" on public.conversations
@@ -46,22 +96,20 @@ alter policy "conversations_group_members_all" on public.conversations
 
 alter policy "messages_group_select" on public.messages
   using (
-    exists (
-      select 1 from public.conversations c
-      where c.id = messages.conversation_id
-        and c.is_group = true
-        and (c.created_by = auth.uid() or c.user_id = auth.uid() or public.is_conversation_member(c.id, auth.uid()))
-    )
+    public.is_conversation_owner(conversation_id, auth.uid())
+    or public.is_conversation_member(conversation_id, auth.uid())
   );
 
 alter policy "messages_group_insert" on public.messages
   with check (
-    exists (
-      select 1 from public.conversations c
-      where c.id = conversation_id
-        and c.is_group = true
-        and (c.created_by = auth.uid() or c.user_id = auth.uid() or public.is_conversation_member(c.id, auth.uid()))
-    )
+    public.is_conversation_owner(conversation_id, auth.uid())
+    or public.is_conversation_member(conversation_id, auth.uid())
+  );
+
+alter policy "messages_group_delete" on public.messages
+  using (
+    sender_id = auth.uid()
+    or public.is_conversation_owner(conversation_id, auth.uid())
   );
 
 create policy "pfp_authenticated_update" on storage.objects
