@@ -39,7 +39,6 @@ class _PeerProfileScreenState extends State<PeerProfileScreen> {
   String? _username;
   String? _avatarUrl;
   DateTime? _createdAt;
-  bool _loading = true;
 
   List<Map<String, dynamic>> _sharedMedia = [];
   bool _loadingMedia = false;
@@ -68,14 +67,9 @@ class _PeerProfileScreenState extends State<PeerProfileScreen> {
           if (profile['created_at'] != null) {
             _createdAt = DateTime.tryParse(profile['created_at'] as String);
           }
-          _loading = false;
         });
-      } else {
-        setState(() => _loading = false);
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadSharedMedia() async {

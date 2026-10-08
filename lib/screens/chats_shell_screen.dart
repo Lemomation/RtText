@@ -1,19 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
-import 'package:rttext/core/animations.dart';
-import 'package:rttext/services/beads_service.dart';
 import 'package:rttext/services/updater_service.dart';
-import 'package:rttext/widgets/bead_icon.dart';
 import 'package:rttext/widgets/rt_icons.dart';
 import 'package:rttext/widgets/update_prompt_dialog.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Shell with bottom navigation (Chats / Discover) hosting tab routes.
+/// Shell with bottom navigation (Chats / Discover / Profile) hosting tab routes.
 ///
-/// On first load it tries the lazy daily bead claim; when the server says a
-/// claim happened (first login of the day), a small celebration popup shows.
-/// It then checks in the background for app updates and prompts the user if
+/// Daily bead giveaway is currently suspended to simulate the economy.
+/// It checks in the background for app updates and prompts the user if
 /// a newer release is ready.
 class ChatsShellScreen extends StatefulWidget {
   const ChatsShellScreen({super.key, required this.child});
@@ -34,7 +28,6 @@ class _ChatsShellScreenState extends State<ChatsShellScreen> {
   }
 
   Future<void> _runStartupTasks() async {
-    // Daily bead giveaway is suspended to simulate the economy.
     if (!mounted) return;
     await _checkForUpdate();
   }
@@ -48,62 +41,6 @@ class _ChatsShellScreenState extends State<ChatsShellScreen> {
       await showUpdatePromptDialog(context, info);
     } catch (_) {
       // Background check is non-intrusive; network issues are ignored.
-    }
-  }
-
-  Future<void> _claimDailyBeads() async {
-    try {
-      final balance = await BeadsService(Supabase.instance.client).claimDaily();
-      if (balance == null || !mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const BeadIcon(size: 72)
-                  .animate()
-                  .scale(
-                    begin: const Offset(0.3, 0.3),
-                    end: const Offset(1, 1),
-                    duration: Motion.slow,
-                    curve: Motion.springCurve,
-                  )
-                  .fade(duration: Motion.emphasized),
-              const SizedBox(height: 20),
-              Text(
-                '+20 beads',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Daily claim — enjoy! Come back tomorrow for more.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Balance: $balance',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-              ),
-            ],
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Nice!'),
-            ),
-          ],
-        ),
-      );
-    } catch (_) {
-      // Claim is best-effort; the server keeps the last-claimed date.
     }
   }
 

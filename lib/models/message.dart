@@ -44,6 +44,7 @@ class Message {
   final bool pending;
 
   bool get isUser => role == 'user';
+  bool get isAssistant => role == 'assistant';
 
   /// True when [myId] sent this message (DM chats).
   bool isMine(String myId) => senderId != null && senderId == myId;

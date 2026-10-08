@@ -22,6 +22,19 @@ class BotsService {
     return (rows as List).map((r) => Bot.fromMap(r as Map<String, dynamic>)).toList();
   }
 
+  /// Searches public bots by name.
+  Future<List<Bot>> search(String query, {int limit = 20}) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return listPublic(limit: limit);
+    final rows = await _client
+        .from('public_bots')
+        .select(_publicColumns)
+        .ilike('name', '%$trimmed%')
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return (rows as List).map((r) => Bot.fromMap(r as Map<String, dynamic>)).toList();
+  }
+
   String? get _uid => _client.auth.currentUser?.id;
 
   /// Owner-only fetch straight from the `bots` table (RLS restricts reads to

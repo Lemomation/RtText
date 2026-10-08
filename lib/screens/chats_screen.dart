@@ -72,14 +72,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 // identified by is_group, a DM by dm_user_id, a bot chat by bot_id.
                 await Supabase.instance.client.from('conversations').insert({
                   'user_id': conversation.userId,
-                  if (conversation.isGroup) ...[
-                    'is_group': true,
-                    if (conversation.title != null) 'title': conversation.title,
-                    if (conversation.avatarUrl != null)
-                      'avatar_url': conversation.avatarUrl,
-                  ] else if (conversation.isDm)
-                    'dm_user_id': conversation.dmUserId
-                  else
+                  if (conversation.isGroup) 'is_group': true,
+                  if (conversation.isGroup && conversation.title != null)
+                    'title': conversation.title,
+                  if (conversation.isGroup && conversation.avatarUrl != null)
+                    'avatar_url': conversation.avatarUrl,
+                  if (!conversation.isGroup && conversation.isDm)
+                    'dm_user_id': conversation.dmUserId,
+                  if (!conversation.isGroup && !conversation.isDm)
                     'bot_id': conversation.botId,
                 });
               } catch (_) {}

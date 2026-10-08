@@ -1,10 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:rttext/core/animations.dart';
 import 'package:rttext/core/uuid.dart';
 import 'package:rttext/models/bot.dart';
 import 'package:rttext/services/bots_service.dart';
@@ -65,7 +63,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   Future<void> _loadInitialCandidates() async {
     setState(() => _searching = true);
     try {
-      final bots = await _botsService.listExplore(limit: 30);
+      final bots = await _botsService.listPublic(limit: 30);
       final users = await _conversationsService.searchPeople('');
       if (mounted) {
         setState(() {

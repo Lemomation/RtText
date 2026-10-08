@@ -558,7 +558,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isGroup) {
       for (final m in _groupMembers) {
         if (m.isBot) {
-          final pattern = RegExp('@' + RegExp.escape(m.name), caseSensitive: false);
+          final pattern =
+              RegExp('@${RegExp.escape(m.name)}', caseSensitive: false);
           if (pattern.hasMatch(text)) {
             triggeredBot = m;
             break;
