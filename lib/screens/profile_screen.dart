@@ -114,7 +114,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               contentType: 'image/jpeg',
             ),
           );
-      final url = client.storage.from('pfp').getPublicUrl(path);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final rawUrl = client.storage.from('pfp').getPublicUrl(path);
+      final url = '$rawUrl?t=$timestamp';
       await client
           .from('profiles')
           .update({'avatar_url': url}).eq('id', uid);
